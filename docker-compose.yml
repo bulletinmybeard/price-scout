@@ -1,0 +1,46 @@
+services:
+  price-scout:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: bulletinmybeard/price-scout:latest
+    container_name: price-scout
+    environment:
+      - DISPLAY=:99
+      - PYTHONUNBUFFERED=1
+      - PYTHONPATH=/app:/app/src
+      - POETRY_VERBOSITY=-1
+      - POETRY_NO_INTERACTION=1
+    ports:
+      # DuckDB Web UI (via socat proxy on container port 4214)
+      - "4213:4214"
+    volumes:
+      # Configuration files
+      - ./config.yaml:/app/config.yaml:delegated
+      - ./provider_configs:/app/provider_configs:delegated
+
+      # Source code
+      - ./src:/app/src
+
+      # Database and DuckDB UI data (SHARED with host for development)
+      - ./data:/app/data:delegated
+      - price-scout-ui-data:/root/.duckdb/extension_data/ui
+    restart: unless-stopped
+    networks:
+      - price-scout-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4213/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+networks:
+  price-scout-network:
+    name: price-scout-network
+    driver: bridge
+
+volumes:
+  # Only UI data uses named volume
+  price-scout-ui-data:
+    name: price-scout-ui-data

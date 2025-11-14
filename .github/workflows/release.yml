@@ -1,0 +1,324 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'  # Trigger on version tags (e.g., v1.0.0)
+  workflow_dispatch:  # Manual trigger for controlled releases
+    inputs:
+      tag_name:
+        description: 'Git tag for release (e.g., v0.9.1, v1.0.0)'
+        required: true
+        type: string
+      publish_to_pypi:
+        description: 'Publish to PyPI (production)'
+        required: true
+        type: boolean
+        default: false
+      create_github_release:
+        description: 'Create GitHub Release'
+        required: true
+        type: boolean
+        default: true
+
+env:
+  PYTHON_VERSION: '3.12'
+  POETRY_VERSION: '1.8.2'
+  DOCKER_IMAGE: bulletinmybeard/price-scout
+
+jobs:
+  # Build Python Package (tests already run in CI workflow)
+  build:
+    name: Build Python Package
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Set tag name
+        id: tag
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "name=${{ inputs.tag_name }}" >> $GITHUB_OUTPUT
+          else
+            echo "name=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Fetch all history for changelog
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install Poetry
+        uses: snok/install-poetry@v1
+        with:
+          version: ${{ env.POETRY_VERSION }}
+          virtualenvs-create: true
+          virtualenvs-in-project: true
+
+      - name: Load cached venv
+        id: cached-poetry-dependencies
+        uses: actions/cache@v4
+        with:
+          path: .venv
+          key: venv-${{ runner.os }}-${{ steps.setup-python.outputs.python-version }}-${{ hashFiles('**/poetry.lock') }}
+
+      - name: Install dependencies
+        if: steps.cached-poetry-dependencies.outputs.cache-hit != 'true'
+        run: poetry install --no-interaction --no-root
+
+      - name: Install project
+        run: poetry install --no-interaction
+
+      - name: Build package
+        run: |
+          poetry build
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-package
+          path: dist/
+          retention-days: 7
+
+  publish-pypi:
+    name: Publish to PyPI
+    needs: build
+    runs-on: ubuntu-latest
+    # Only publish to PyPI when manually triggered with publish_to_pypi=true
+    if: github.event_name == 'workflow_dispatch' && inputs.publish_to_pypi == true
+
+    steps:
+      - name: Set tag name
+        id: tag
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "name=${{ inputs.tag_name }}" >> $GITHUB_OUTPUT
+          else
+            echo "name=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install Poetry
+        uses: snok/install-poetry@v1
+        with:
+          version: ${{ env.POETRY_VERSION }}
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: python-package
+          path: dist/
+
+      - name: Publish to PyPI
+        env:
+          POETRY_PYPI_TOKEN_PYPI: ${{ secrets.PYPI_API_TOKEN }}
+        run: |
+          poetry publish --no-interaction
+
+      - name: Verify PyPI publication
+        run: |
+          VERSION="${{ steps.tag.outputs.name }}"
+          VERSION="${VERSION#v}"
+          sleep 30
+          pip install price-scout==$VERSION
+
+  create-github-release:
+    name: Create GitHub Release
+    needs: [build]
+    runs-on: ubuntu-latest
+    # Create release when: 1) triggered by tag push, OR 2) manually triggered with create_github_release=true
+    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.create_github_release == true)
+    permissions:
+      contents: write
+
+    steps:
+      - name: Set tag name
+        id: tag
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "name=${{ inputs.tag_name }}" >> $GITHUB_OUTPUT
+          else
+            echo "name=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: python-package
+          path: dist/
+
+      - name: Generate SHA256 checksums
+        run: |
+          cd dist/
+          sha256sum *.whl *.tar.gz > checksums.txt
+          cat checksums.txt
+          cd ..
+
+      - name: Extract version from tag
+        id: version
+        run: |
+          VERSION="${{ steps.tag.outputs.name }}"
+          VERSION="${VERSION#v}"
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Generate comprehensive release notes
+        id: changelog
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          TAG="${{ steps.tag.outputs.name }}"
+          REPO="${{ github.repository }}"
+          DOCKER_IMAGE="${{ env.DOCKER_IMAGE }}"
+
+          # Extract CHANGELOG section for this version
+          CHANGELOG_SECTION=$(awk "/^## \[$VERSION\]/,/^## \[/" CHANGELOG.md | grep -v "^## \[" | sed '/^$/d' || echo "")
+
+          # Detect breaking changes
+          HAS_BREAKING_CHANGES=$(echo "$CHANGELOG_SECTION" | grep -i "breaking change" > /dev/null && echo "true" || echo "false")
+
+          # Extract breaking changes section if exists
+          BREAKING_CHANGES=$(echo "$CHANGELOG_SECTION" | awk '/### Breaking Changes/,/^### [^B]/' | grep -v "^###" || echo "")
+
+          # Read checksums
+          CHECKSUMS=$(cat dist/checksums.txt || echo "")
+
+          # Get wheel and tarball filenames
+          WHEEL_FILE=$(ls dist/*.whl | xargs basename)
+          TARBALL_FILE=$(ls dist/*.tar.gz | xargs basename)
+
+          # Create comprehensive release notes
+          cat > release_notes.md <<RELEASE_NOTES_EOF
+          ## Installation
+
+          ### Docker (Recommended)
+
+          \`\`\`bash
+          docker pull ${DOCKER_IMAGE}:${TAG}
+          docker run -d --name price-scout \\
+            -p 4213:4214 \\
+            -v price-scout-data:/app/data \\
+            ${DOCKER_IMAGE}:${TAG}
+          \`\`\`
+
+          ### Python Package
+
+          \`\`\`bash
+          pip install price-scout==${VERSION}
+          \`\`\`
+
+          ## Distribution Links
+
+          | Platform | Link |
+          |----------|------|
+          | **PyPI** | [price-scout v${VERSION}](https://pypi.org/project/price-scout/${VERSION}/) |
+          | **Docker Hub** | [${DOCKER_IMAGE}:${TAG}](https://hub.docker.com/r/${DOCKER_IMAGE}/tags) |
+          | **Documentation** | [README](https://github.com/${REPO}#readme) |
+
+          ## What's Changed
+
+          ${CHANGELOG_SECTION}
+
+          RELEASE_NOTES_EOF
+
+          # Add upgrade notes if breaking changes detected
+          if [ "$HAS_BREAKING_CHANGES" = "true" ]; then
+            cat >> release_notes.md <<UPGRADE_NOTES_EOF
+
+          ## Upgrade Notes
+
+          This release contains breaking changes. Please review before upgrading:
+
+          ${BREAKING_CHANGES}
+
+          UPGRADE_NOTES_EOF
+          fi
+
+          # Add checksums section
+          cat >> release_notes.md <<'CHECKSUMS_EOF'
+
+          ## Package Checksums (SHA256)
+
+          | File | SHA256 |
+          |------|--------|
+          CHECKSUMS_EOF
+
+          # Format checksums as table rows
+          echo "$CHECKSUMS" | while read hash filename; do
+            echo "| \`$filename\` | \`$hash\` |" >> release_notes.md
+          done
+
+          # Add footer
+          cat >> release_notes.md <<FOOTER_EOF
+
+          ## Assets
+
+          This release includes:
+          - **Python Wheel** (\`.whl\`) - Universal wheel for all platforms
+          - **Source Distribution** (\`.tar.gz\`) - Complete source code with all files
+
+          ---
+
+          **Full Changelog**: https://github.com/${REPO}/blob/master/CHANGELOG.md
+
+          **First time using Price Scout?** Check out the [Quick Start Guide](https://github.com/${REPO}#quick-start-recommended-docker)
+          FOOTER_EOF
+
+          # Handle fallback if no CHANGELOG section found
+          if [ -z "$CHANGELOG_SECTION" ]; then
+            echo "" > release_notes.md
+            cat > release_notes.md <<FALLBACK_EOF
+          ## Release Notes
+
+          Release version ${VERSION}
+
+          See full changelog at: https://github.com/${REPO}/blob/master/CHANGELOG.md
+          FALLBACK_EOF
+          fi
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.name }}
+          name: Release v${{ steps.version.outputs.version }}
+          body_path: release_notes.md
+          draft: false
+          prerelease: ${{ contains(steps.tag.outputs.name, 'alpha') || contains(steps.tag.outputs.name, 'beta') || contains(steps.tag.outputs.name, 'rc') }}
+          files: |
+            dist/*.whl
+            dist/*.tar.gz
+            dist/checksums.txt
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Post Release Summary
+        run: |
+          echo "## Release Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Version**: ${{ steps.version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Tag**: ${{ steps.tag.outputs.name }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Published Packages" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **PyPI**: https://pypi.org/project/price-scout/${{ steps.version.outputs.version }}/" >> $GITHUB_STEP_SUMMARY
+          echo "- **GitHub Release**: ${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ steps.tag.outputs.name }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Python Package" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
+          echo "pip install price-scout==${{ steps.version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY

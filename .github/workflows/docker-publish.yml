@@ -1,0 +1,152 @@
+name: Docker Publish
+
+on:
+  push:
+    tags:
+      - 'v*'  # Trigger on version tags (e.g., v1.0.0)
+  workflow_dispatch:  # Manual trigger
+    inputs:
+      tag_name:
+        description: 'Docker tag (e.g., latest, v1.0.0, 1.0.0)'
+        required: true
+        type: string
+        default: 'latest'
+      push_latest:
+        description: 'Also tag as latest'
+        required: true
+        type: boolean
+        default: true
+
+env:
+  DOCKER_IMAGE: bulletinmybeard/price-scout
+  PLATFORMS: linux/amd64,linux/arm64
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Set tag name
+        id: tag
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "name=${{ inputs.tag_name }}" >> $GITHUB_OUTPUT
+            echo "push_latest=${{ inputs.push_latest }}" >> $GITHUB_OUTPUT
+          else
+            TAG="${GITHUB_REF#refs/tags/}"
+            echo "name=$TAG" >> $GITHUB_OUTPUT
+            echo "push_latest=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Determine version tag
+        id: version
+        run: |
+          if [[ "${{ github.event_name }}" == "release" ]]; then
+            # Extract version from release tag (remove 'v' prefix if present)
+            TAG="${{ github.event.release.tag_name }}"
+          else
+            # Use tag from step output (works for both manual and tag push)
+            TAG="${{ steps.tag.outputs.name }}"
+          fi
+          # Remove 'v' prefix if present using sed (more reliable)
+          VERSION=$(echo "$TAG" | sed 's/^v//')
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Input tag: $TAG"
+          echo "Output version: $VERSION"
+
+      - name: Determine if prerelease
+        id: prerelease
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          if [[ "$VERSION" =~ (alpha|beta|rc) ]]; then
+            echo "is_prerelease=true" >> $GITHUB_OUTPUT
+            echo "Detected prerelease version"
+          else
+            echo "is_prerelease=false" >> $GITHUB_OUTPUT
+            echo "Detected stable release"
+          fi
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          platforms: ${{ env.PLATFORMS }}
+          push: true
+          tags: |
+            ${{ env.DOCKER_IMAGE }}:${{ steps.version.outputs.version }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          labels: |
+            org.opencontainers.image.title=Price Scout
+            org.opencontainers.image.description=Self-hosted price tracker with local data storage
+            org.opencontainers.image.version=${{ steps.version.outputs.version }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.url=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+
+      - name: Tag and push as latest
+        if: |
+          steps.tag.outputs.push_latest == 'true' && steps.prerelease.outputs.is_prerelease == 'false'
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          platforms: ${{ env.PLATFORMS }}
+          push: true
+          tags: ${{ env.DOCKER_IMAGE }}:latest
+          cache-from: type=gha
+
+      - name: Test container startup (AMD64)
+        run: |
+          echo "Testing AMD64 container..."
+          docker pull --platform linux/amd64 ${{ env.DOCKER_IMAGE }}:${{ steps.version.outputs.version }}
+          docker run --rm --platform linux/amd64 \
+            ${{ env.DOCKER_IMAGE }}:${{ steps.version.outputs.version }} \
+            price-scout --version
+          echo "AMD64 container test passed"
+
+      - name: Test container startup (ARM64)
+        run: |
+          echo "Testing ARM64 container..."
+          docker pull --platform linux/arm64 ${{ env.DOCKER_IMAGE }}:${{ steps.version.outputs.version }}
+          docker run --rm --platform linux/arm64 \
+            ${{ env.DOCKER_IMAGE }}:${{ steps.version.outputs.version }} \
+            price-scout --version
+          echo "ARM64 container test passed"
+
+      - name: Generate summary
+        run: |
+          echo "## Docker Image Published" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Version**: \`${{ steps.version.outputs.version }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Image**: \`${{ env.DOCKER_IMAGE }}:${{ steps.version.outputs.version }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Platforms**: \`${{ env.PLATFORMS }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Pull Command" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
+          echo "docker pull ${{ env.DOCKER_IMAGE }}:${{ steps.version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [[ "${{ steps.tag.outputs.push_latest }}" == "true" && "${{ steps.prerelease.outputs.is_prerelease }}" == "false" ]]; then
+            echo "**Also tagged as**: \`${{ env.DOCKER_IMAGE }}:latest\`" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Links" >> $GITHUB_STEP_SUMMARY
+          echo "- [Docker Hub](https://hub.docker.com/r/${{ env.DOCKER_IMAGE }})" >> $GITHUB_STEP_SUMMARY
+          echo "- [GitHub Repository](${{ github.server_url }}/${{ github.repository }})" >> $GITHUB_STEP_SUMMARY

@@ -1,0 +1,148 @@
+[tool.poetry]
+name = "price-scout"
+version = "0.8.5b1"
+description = "Self-hosted price tracker with local data storage"
+authors = [
+    "Robin Schulz <bulletinmybeard@gmail.com>"
+]
+readme = "README.md"
+license = "MIT"
+homepage = "https://github.com/bulletinmybeard/price-scout"
+repository = "https://github.com/bulletinmybeard/price-scout"
+documentation = "https://github.com/bulletinmybeard/price-scout#readme"
+keywords = ["price-scout", "price-tracker", "price-monitoring", "price-comparison", "web-scraping", "browser-automation", "e-commerce", "analytics", "playwright"]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: Developers",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Internet :: WWW/HTTP :: Dynamic Content",
+    "Topic :: Office/Business :: Financial",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Typing :: Typed",
+]
+packages = [{include = "src"}]
+include = [
+    {path = "config.yaml.example", format = ["sdist", "wheel"]},
+    {path = "provider_configs/*.yaml", format = ["sdist", "wheel"]}
+]
+
+[tool.poetry.dependencies]
+python = "^3.12"
+duckdb = "^1.4.2"
+PyYAML = "^6.0.1"
+requests = "^2.31.0"
+beautifulsoup4 = "^4.12.2"
+lxml = "^6.0.2"
+fake-useragent = "^2.2.0"
+click = "^8.1.7"
+APScheduler = "^3.11.1"
+# Playwright version MUST match Dockerfile.xvfb base image version
+# When updating: update both pyproject.toml AND Dockerfile.xvfb
+playwright = "1.56.0"
+httpx = "^0.28.1"
+selectolax = "^0.4.0"
+chalkbox = "^2.1.1"
+croniter = "^6.0.0"
+pyld = "^2.0.4"
+pydantic = "^2.12.4"
+pydantic-settings = "^2.12.0"
+mdformat-gfm = "^1.0.0"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^7.4.3"
+pytest-cov = "^4.1.0"
+responses = "^0.24.1"
+pytest-asyncio = "^0.23.0"
+ruff = "^0.14.1"
+mypy = "^1.18.2"
+mdformat = "^1.0.0"
+types-pyyaml = "^6.0.12"
+types-croniter = "^6.0.0"
+types-requests = "^2.32.4"
+
+[tool.poetry.scripts]
+price-scout = "src.cli.cli:cli"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.black]
+line-length = 100
+target-version = ['py312']
+include = '\.pyi?$'
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+exclude = [
+    ".git",
+    ".venv",
+    "venv",
+    "build",
+    "dist",
+    "__pycache__",
+    ".mypy_cache",
+    ".pytest_cache",
+    ".ruff_cache",
+]
+
+[tool.ruff.lint]
+select = [
+    "E",      # pycodestyle errors
+    "W",      # pycodestyle warnings
+    "F",      # pyflakes
+    "I",      # isort
+    "N",      # pep8-naming
+    "UP",     # pyupgrade
+    "B",      # flake8-bugbear
+    "C4",     # flake8-comprehensions
+    "SIM",    # flake8-simplify
+    "RUF",    # Ruff-specific rules
+    "S",      # flake8-bandit (security)
+]
+ignore = [
+    "E501",   # Line too long (handled by formatter)
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S101", "S603", "S607"]     # Allow assert and subprocess in tests
+"examples/*" = ["S311", "S603", "S607"]  # Allow pseudo-random generators, subprocess in examples
+"scripts/*" = ["S603", "S607"]           # Allow subprocess in scripts
+
+[tool.ruff.lint.isort]
+combine-as-imports = true
+force-sort-within-sections = true
+known-first-party = ["src", "config"]
+known-third-party = ["chalkbox", "duckdb", "playwright", "click"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "auto"
+docstring-code-format = true
+
+[tool.mypy]
+python_version = "3.12"
+# Disabled warn_return_any to reduce noise from dict.get() and yaml.safe_load() patterns
+# The codebase heavily uses dynamic config loading from YAML/dict structures
+# Enabling this would require extensive TypedDict definitions for all config schemas
+warn_return_any = false
+warn_unused_configs = true
+disallow_untyped_defs = false
+
+# Ignore missing stubs for third-party libraries without type annotations
+[[tool.mypy.overrides]]
+module = ["chalkbox.*", "pyld.*"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = "-v --cov=src --cov-report=term-missing"
