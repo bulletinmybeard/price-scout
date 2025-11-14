@@ -1,0 +1,146 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+
+env:
+  PYTHON_VERSION: '3.12'
+  POETRY_VERSION: '1.8.2'
+
+jobs:
+  test-python:
+    name: Test Python Package
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install Poetry
+        uses: snok/install-poetry@v1
+        with:
+          version: ${{ env.POETRY_VERSION }}
+          virtualenvs-create: true
+          virtualenvs-in-project: true
+
+      - name: Load cached venv
+        id: cached-poetry-dependencies
+        uses: actions/cache@v4
+        with:
+          path: .venv
+          key: venv-${{ runner.os }}-${{ steps.setup-python.outputs.python-version }}-${{ hashFiles('**/poetry.lock') }}
+
+      - name: Install dependencies
+        if: steps.cached-poetry-dependencies.outputs.cache-hit != 'true'
+        run: poetry install --no-interaction --no-root
+
+      - name: Install project
+        run: poetry install --no-interaction
+
+      - name: Run tests
+        run: |
+          poetry run pytest --cov=src --cov-report=xml --cov-report=term
+
+      - name: Build package
+        run: |
+          poetry build
+
+      - name: Verify package contents
+        run: |
+          tar -tzf dist/*.tar.gz | head -20
+
+      - name: Test package installation
+        run: |
+          pip install dist/*.whl
+          price-scout --version
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-package-${{ github.sha }}
+          path: dist/
+          retention-days: 7
+
+  lint:
+    name: Lint & Type Check
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install Poetry
+        uses: snok/install-poetry@v1
+        with:
+          version: ${{ env.POETRY_VERSION }}
+
+      - name: Load cached venv
+        id: cached-poetry-dependencies
+        uses: actions/cache@v4
+        with:
+          path: .venv
+          key: venv-${{ runner.os }}-${{ steps.setup-python.outputs.python-version }}-${{ hashFiles('**/poetry.lock') }}
+
+      - name: Install dependencies
+        if: steps.cached-poetry-dependencies.outputs.cache-hit != 'true'
+        run: poetry install --no-interaction --with dev
+
+      - name: Install project
+        run: poetry install --no-interaction
+
+      - name: Run Ruff linting
+        run: |
+          poetry run ruff check src/ tests/
+
+      - name: Check code formatting
+        run: |
+          poetry run ruff format --check src/ tests/
+
+      - name: Check markdown formatting
+        run: |
+          find . -name "*.md" -not -path "./.venv/*" -not -path "./.git/*" -not -path "./.pytest_cache/*" | xargs poetry run mdformat --check
+
+      - name: Run type checking
+        run: |
+          poetry run mypy src/ tests/
+
+  ci-summary:
+    name: CI Summary
+    needs: [test-python, lint]
+    runs-on: ubuntu-latest
+    if: always()
+
+    steps:
+      - name: Generate summary
+        run: |
+          echo "## CI Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Job Status" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Job | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Python Tests | ${{ needs.test-python.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Lint & Format | ${{ needs.lint.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [ "${{ needs.test-python.result }}" == "success" ] && [ "${{ needs.lint.result }}" == "success" ]; then
+            echo "### All CI Checks Passed!" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "Ready to merge or create a release." >> $GITHUB_STEP_SUMMARY
+          else
+            echo "### Some CI Checks Failed" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "Please review the failed jobs above." >> $GITHUB_STEP_SUMMARY
+          fi

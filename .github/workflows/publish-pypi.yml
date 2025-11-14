@@ -1,0 +1,88 @@
+name: Publish to PyPI
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: 'Git tag to publish (e.g., v1.0.0)'
+        required: true
+        type: string
+
+env:
+  PYTHON_VERSION: '3.12'
+  POETRY_VERSION: '1.8.2'
+
+jobs:
+  publish:
+    name: Publish to PyPI
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Set tag and version
+        id: tag
+        run: |
+          TAG="${{ inputs.tag_name }}"
+          VERSION=$(echo "$TAG" | sed 's/^v//')
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Publishing tag: $TAG (version: $VERSION)"
+
+      - name: Checkout code at tag
+        uses: actions/checkout@v4
+        with:
+          ref: refs/tags/${{ steps.tag.outputs.tag }}
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install Poetry
+        uses: snok/install-poetry@v1
+        with:
+          version: ${{ env.POETRY_VERSION }}
+
+      - name: Verify version matches tag
+        run: |
+          PYPROJECT_VERSION=$(poetry version -s)
+          TAG_VERSION="${{ steps.tag.outputs.version }}"
+          if [ "$PYPROJECT_VERSION" != "$TAG_VERSION" ]; then
+            echo "ERROR: Version mismatch!"
+            echo "pyproject.toml version: $PYPROJECT_VERSION"
+            echo "Git tag version: $TAG_VERSION"
+            exit 1
+          fi
+          echo "Version verified: $PYPROJECT_VERSION"
+
+      - name: Build package
+        run: poetry build
+
+      - name: Publish to PyPI
+        env:
+          POETRY_PYPI_TOKEN_PYPI: ${{ secrets.PYPI_API_TOKEN }}
+        run: poetry publish --no-interaction
+
+      - name: Verify PyPI publication
+        run: |
+          VERSION="${{ steps.tag.outputs.version }}"
+          echo "Waiting 30 seconds for PyPI to process..."
+          sleep 30
+          echo "Testing installation from PyPI..."
+          pip install price-scout==$VERSION
+          price-scout --version
+
+      - name: Create summary
+        run: |
+          echo "## PyPI Publication Successful" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Package**: price-scout" >> $GITHUB_STEP_SUMMARY
+          echo "**Version**: ${{ steps.tag.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Tag**: ${{ steps.tag.outputs.tag }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Installation" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
+          echo "pip install price-scout==${{ steps.tag.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**PyPI URL**: https://pypi.org/project/price-scout/${{ steps.tag.outputs.version }}/" >> $GITHUB_STEP_SUMMARY

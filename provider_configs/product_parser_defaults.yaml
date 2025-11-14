@@ -1,0 +1,240 @@
+# Product Parser Default Configuration
+#
+# Structure:
+#   variants:
+#     <category>:      # colors, flavors, or types
+#       <language>:    # en, nl, de, etc.
+#         - variant1
+#   units:
+#     <code>: <normalized>  # KGM: kg
+#   countries:
+#     <country_code>: <language_code>  # NL: nl
+#   count_units:
+#     - unit1
+#
+
+variants:
+  colors:
+    en:
+      - red
+      - blue
+      - green
+      - black
+      - white
+      - yellow
+      - orange
+      - pink
+      - purple
+      - brown
+      - grey
+      - gray
+      - silver
+      - gold
+      - beige
+      - navy
+      - turquoise
+
+    nl:
+      - rood
+      - blauw
+      - groen
+      - zwart
+      - wit
+
+    de:
+      - rot
+      - blau
+      - grün
+      - schwarz
+      - weiss
+
+  flavors:
+    en:
+      - chocolate
+      - vanilla
+      - strawberry
+      - caramel
+      - coffee
+      - lemon
+      - lime
+      - apple
+      - cherry
+      - mint
+      - banana
+      - coconut
+      - hazelnut
+      - almond
+      - pistachio
+
+    nl:
+      - chocolade
+      - vanille
+      - aardbei
+      - citroen
+      - limoen
+      - koffie
+
+    de:
+      - schokolade
+      - vanille
+      - erdbeere
+      - zitrone
+      - limone
+      - kaffee
+
+  types:
+    en:
+      - organic
+      - bio
+      - eco
+      - light
+      - zero
+      - diet
+      - sugar-free
+      - fat-free
+      - gluten-free
+      - vegan
+      - vegetarian
+      - lactose-free
+
+    nl:
+      - biologisch
+      - veganistisch
+      - vegetarisch
+
+    de:
+      - biologisch
+      - vegan
+      - vegetarisch
+
+# UN/CEFACT Unit Code Mappings
+# https://unece.org/trade/cefact/UNLOCODE-Download
+# Maps standardized codes and common variations to normalized units
+units:
+  KGM: kg
+  GRM: g
+  MGM: mg
+  TNE: t
+  LTR: l
+  MLT: ml
+  CLT: cl
+  DLT: dl
+  MTR: m
+  CMT: cm
+  MMT: mm
+  KMT: km
+  MTK: m²
+  CMK: cm²
+  H87: pcs
+  C62: units
+  kilo: kg
+  kilogram: kg
+  gram: g
+  liter: l
+  milliliter: ml
+  centiliter: cl
+  stuks: st
+  stuk: st
+  pack: x
+
+# Country to Language Mapping (ISO 3166-1 alpha-2 to ISO 639-1)
+# Used as fallback when language cannot be detected from page HTML
+countries:
+  NL: nl
+  BE: nl
+  DE: de
+  AT: de
+  CH: de
+  FR: fr
+  ES: es
+  IT: it
+  PT: pt
+  PL: pl
+  CZ: cs
+  SE: sv
+  NO: no
+  DK: da
+  FI: fi
+  GR: el
+  RO: ro
+  HU: hu
+  GB: en
+  IE: en
+  US: en
+  CA: en
+  AU: en
+  NZ: en
+  ZA: en
+  JP: ja
+  CN: zh
+  KR: ko
+  TW: zh
+  HK: zh
+  TH: th
+  VN: vi
+  ID: id
+  MY: ms
+  SG: en
+  PH: en
+  IN: en
+  TR: tr
+  SA: ar
+  AE: ar
+  IL: he
+  MX: es
+  BR: pt
+  AR: es
+  CL: es
+  CO: es
+
+# Units that represent count (pieces, items) rather than weight/volume
+# These are checked LAST to give priority to weight/volume units
+count_units:
+  - st
+  - stuks
+  - stuk
+  - pcs
+  - units
+  - H87
+  - C62
+
+# Currency Symbols (ISO 4217 code to symbol)
+# Used for formatting price per unit displays
+currency_symbols:
+  EUR: €
+  USD: $
+  GBP: £
+  JPY: ¥
+  CHF: Fr
+  CNY: ¥
+  AUD: A$
+  CAD: C$
+  NZD: NZ$
+  SEK: kr
+  NOK: kr
+  DKK: kr
+  PLN: zł
+  CZK: Kč
+  HUF: Ft
+  RON: lei
+  BGN: лв
+  HRK: kn
+  RUB: ₽
+  TRY: ₺
+  INR: ₹
+  BRL: R$
+  MXN: $
+  ARS: $
+  CLP: $
+  COP: $
+  ZAR: R
+  ILS: ₪
+  AED: د.إ
+  SAR: ﷼
+  THB: ฿
+  SGD: S$
+  MYR: RM
+  IDR: Rp
+  PHP: ₱
+  VND: ₫
+  KRW: ₩

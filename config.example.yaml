@@ -1,0 +1,87 @@
+# Price Scout Configuration
+#
+# Pip install:
+#   All Platforms: ~/.price-scout/
+#   Config:         ~/.price-scout/config.yaml
+#   Providers:     ~/.price-scout/provider_configs/*.yaml
+#   Database:      ~/.price-scout/database.duckdb
+#
+# Git clone:
+#   Config:        ./config.yaml
+#   Providers:    ./provider_configs/*.yaml
+#   Database:     ./price_scout.duckdb
+#
+# Docker:
+#   Config:        /app/config.yaml
+#   Database:     /app/data/price_scout.duckdb
+
+database:
+  url: ""
+
+  # Custom database path examples:
+  # url: "./price_scout.duckdb"
+  # url: "/var/lib/price-scout/data.duckdb"
+
+  # Parquet export for DuckDB UI
+  export_to_parquet: true
+  parquet_path: "./data/snapshots.parquet"
+
+cli:
+  max_parallel_urls: 25
+  dev_mode: false
+  timezone: "Europe/Amsterdam"
+
+scraping:
+  user_agent_rotation: true
+
+  # Exponential backoff for retries
+  request_delay_seconds: 2.0
+
+  max_retries: 3
+  timeout_seconds: 30
+  strip_query_params: true
+  use_playwright: true
+
+  # Platform notes:
+  # - Windows/macOS PyPI: Must use true (no Xvfb)
+  # - Linux PyPI: Use true (Xvfb requires manual setup)
+  # - Docker: Can use false (Xvfb enabled)
+  #
+  # Sites with non-standard behavior:
+  # - Some sites require headless: false + Xvfb (Docker recommended)
+  # - PyPI users: Headless works for most standard sites
+  headless: true
+
+  browser_type: "firefox"
+
+  viewport_width: 1920
+  viewport_height: 1080
+
+  locale: "nl-NL"
+  timezone: "Europe/Amsterdam"
+
+  # For troubleshooting
+  save_screenshots: false
+  screenshots_dir: "logs/screenshots"
+
+# Provider Configuration (optional)
+#providers:
+
+# Track the same product across multiple stores to compare prices
+# Provider is auto-detected from URL
+product_groups:
+  # Example: PlayStation 5 Digital Edition tracking across stores
+  - name: "PS5 Digital Edition"
+    description: "Track PlayStation 5 Digital Edition prices across retailers"
+    pages:
+      - "https://www.shop-a.com/product/56452-ps5-digital-edition"
+      - "https://www.shop-b.com/product/34242-ps5-digital-edition-sale"
+      - "https://www.shop-c.com/product/91023-playstation-5-digital"
+
+  # Example: Grocery item tracking
+  - name: "Coffee Beans"
+    description: "Track different coffee beans at one supermarket"
+    pages:
+      - "https://www.supermarket-a.com/product/dark-roast-100-arabica"
+      - "https://www.supermarket-a.com/product/colombia-whole-bean-medium-roast"
+      - "https://www.supermarket-a.com/product/espresso-whole-beans"

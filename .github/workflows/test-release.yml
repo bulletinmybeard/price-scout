@@ -1,0 +1,154 @@
+name: Test Release
+
+on:
+  push:
+    branches: [master]  # Auto-run after merge to master
+  workflow_dispatch:  # Manual trigger with options
+    inputs:
+      publish_test_pypi:
+        description: 'Publish to test.pypi.org'
+        required: true
+        type: boolean
+        default: false
+
+env:
+  PYTHON_VERSION: '3.12'
+  POETRY_VERSION: '1.8.2'
+
+jobs:
+  # Test Python Package Build
+  test-python-build:
+    name: Test Python Package Build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install Poetry
+        uses: snok/install-poetry@v1
+        with:
+          version: ${{ env.POETRY_VERSION }}
+          virtualenvs-create: true
+          virtualenvs-in-project: true
+
+      - name: Load cached venv
+        id: cached-poetry-dependencies
+        uses: actions/cache@v4
+        with:
+          path: .venv
+          key: venv-${{ runner.os }}-${{ steps.setup-python.outputs.python-version }}-${{ hashFiles('**/poetry.lock') }}
+
+      - name: Install dependencies
+        if: steps.cached-poetry-dependencies.outputs.cache-hit != 'true'
+        run: poetry install --no-interaction --no-root
+
+      - name: Install project
+        run: poetry install --no-interaction
+
+      - name: Run tests
+        run: |
+          poetry run pytest --cov=src --cov-report=xml --cov-report=term
+
+      - name: Run linting
+        run: |
+          poetry run ruff check src/
+
+      - name: Run type checking
+        run: |
+          poetry run mypy src/ tests/
+
+      - name: Build package
+        run: |
+          poetry build
+
+      - name: Verify package contents
+        run: |
+          tar -tzf dist/*.tar.gz | head -20
+
+      - name: Test package installation
+        run: |
+          pip install dist/*.whl
+          price-scout --version
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-package-test
+          path: dist/
+          retention-days: 7
+
+  # Publish to Test PyPI (Optional - Manual Only)
+  publish-test-pypi:
+    name: Publish to Test PyPI
+    needs: test-python-build
+    runs-on: ubuntu-latest
+    # Only when manually triggered with publish flag enabled
+    if: github.event_name == 'workflow_dispatch' && inputs.publish_test_pypi == true
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install Poetry
+        uses: snok/install-poetry@v1
+        with:
+          version: ${{ env.POETRY_VERSION }}
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: python-package-test
+          path: dist/
+
+      - name: Publish to Test PyPI
+        env:
+          POETRY_PYPI_TOKEN_TESTPYPI: ${{ secrets.TEST_PYPI_API_TOKEN }}
+        run: |
+          poetry config repositories.testpypi https://test.pypi.org/legacy/
+          poetry publish -r testpypi --no-interaction
+
+      - name: Test installation from Test PyPI
+        run: |
+          VERSION=$(poetry version -s)
+          sleep 30
+          pip install --index-url https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ price-scout==$VERSION
+          price-scout --version
+
+  test-summary:
+    name: Test Release Summary
+    needs: [test-python-build]
+    runs-on: ubuntu-latest
+    if: always()
+
+    steps:
+      - name: Generate summary
+        run: |
+          echo "## 🧪 Test Release Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Job Status" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Job | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Python Build | ${{ needs.test-python-build.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [ "${{ needs.test-python-build.result }}" == "success" ]; then
+            echo "### All Tests Passed!" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "Ready to create a release when needed." >> $GITHUB_STEP_SUMMARY
+          else
+            echo "### Some Tests Failed" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "Please review the failed jobs above." >> $GITHUB_STEP_SUMMARY
+          fi
