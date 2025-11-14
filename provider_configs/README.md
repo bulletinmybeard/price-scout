@@ -25,22 +25,22 @@ price-scout --provider-config my_store.yaml track --url "PRODUCT_URL"
 
 ### Required Fields
 
-| Field | Description | Example |
-|-------|-------------|---------|
-| `name` | Provider identifier (lowercase, underscores) | `"jumbo"` |
-| `country` | Two-letter country code | `"NL"`, `"US"` |
-| `base_url` | Retailer's website URL | `"https://www.jumbo.com"` |
-| `extraction.priority` | Extraction methods to try | `["json-ld"]` |
+| Field                 | Description                                  | Example                   |
+| --------------------- | -------------------------------------------- | ------------------------- |
+| `name`                | Provider identifier (lowercase, underscores) | `"jumbo"`                 |
+| `country`             | Two-letter country code                      | `"NL"`, `"US"`            |
+| `base_url`            | Retailer's website URL                       | `"https://www.jumbo.com"` |
+| `extraction.priority` | Extraction methods to try                    | `["json-ld"]`             |
 
 ### Optional Fields
 
-| Field | Description | Default |
-|-------|-------------|---------|
-| `wait_strategy` | Page load strategy | `"domcontentloaded"` |
-| `wait_delay` | Extra wait time (seconds) | `0` |
-| `extraction.json_ld.field_mappings` | Map nested JSON-LD fields | Auto-detected |
-| `extraction.json_ld.default_availability_when_missing` | Fallback availability | `false` |
-| `transformations` | Post-process extracted data | None |
+| Field                                                  | Description                 | Default              |
+| ------------------------------------------------------ | --------------------------- | -------------------- |
+| `wait_strategy`                                        | Page load strategy          | `"domcontentloaded"` |
+| `wait_delay`                                           | Extra wait time (seconds)   | `0`                  |
+| `extraction.json_ld.field_mappings`                    | Map nested JSON-LD fields   | Auto-detected        |
+| `extraction.json_ld.default_availability_when_missing` | Fallback availability       | `false`              |
+| `transformations`                                      | Post-process extracted data | None                 |
 
 ## Field Mappings
 
@@ -73,6 +73,7 @@ Apply transformations to extracted data:
 ### Available Types
 
 **`split`** - Split string into list
+
 ```yaml
 transformations:
   category:
@@ -81,6 +82,7 @@ transformations:
 ```
 
 **`regex_replace`** - Find and replace with regex
+
 ```yaml
 transformations:
   description:
@@ -90,6 +92,7 @@ transformations:
 ```
 
 **`price_specification`** - Extract price from PriceSpecification object
+
 ```yaml
 transformations:
   current_price:
@@ -98,6 +101,7 @@ transformations:
 ```
 
 **`multiply`** - Multiply numeric value
+
 ```yaml
 transformations:
   current_price:
@@ -139,6 +143,7 @@ price-scout --debug --provider-config your_store.yaml track --url "PRODUCT_URL"
 ### 3. Check extracted data
 
 Look for:
+
 - Product name extracted correctly
 - Price is numeric (not string with currency symbol)
 - Availability detected (if product is in stock)
@@ -146,22 +151,25 @@ Look for:
 ## Common Issues
 
 **"No JSON-LD found"**
+
 - Check if the website uses JSON-LD (view page source, search for `application/ld+json`)
 - Some sites need JavaScript to render - use `wait_strategy: "networkidle"`
 
 **Wrong field values**
+
 - Add field_mappings to specify correct paths
 - Use browser DevTools to inspect JSON-LD structure
 
 **Missing fields**
+
 - Provide defaults using `{"default": "value"}` in field_mappings
 - Check if field exists in JSON-LD at all
 
 ## Next Steps
 
 1. **Find JSON-LD structure**: View product page source, locate `<script type="application/ld+json">`
-2. **Identify fields**: Match Schema.org fields to our model (name, price, currency, etc.)
-3. **Create config**: Start minimal, add field_mappings/transformations as needed
-4. **Test**: Use `--provider-config` flag to test before committing
+1. **Identify fields**: Match Schema.org fields to our model (name, price, currency, etc.)
+1. **Create config**: Start minimal, add field_mappings/transformations as needed
+1. **Test**: Use `--provider-config` flag to test before committing
 
 For detailed field mapping examples and advanced features, see `.claude/CLAUDE.md` section "Provider Configuration Schema".
