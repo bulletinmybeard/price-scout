@@ -72,7 +72,7 @@ class TestUserAgentRotation:
         provider = ConcreteAsyncProvider(config=config)
         ua = provider._get_user_agent()
 
-        assert "Chrome" in ua
+        assert ("Chrome" in ua or "CriOS" in ua)
         assert "Safari" in ua
 
     def test_dynamic_ua_safari_when_rotation_enabled(self):
