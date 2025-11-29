@@ -100,6 +100,13 @@ jobs:
       - name: Install project
         run: poetry install --no-interaction
 
+      - name: Check poetry.lock consistency
+        run: |
+          cp poetry.lock poetry.lock.bak
+          poetry --version
+          poetry lock
+          diff <(grep -v '^#' poetry.lock.bak) <(grep -v '^#' poetry.lock)
+
       - name: Run Ruff linting
         run: |
           poetry run ruff check src/ tests/
