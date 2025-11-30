@@ -324,9 +324,7 @@ class ConfigurableProvider(AsyncBaseProvider):
 
             if promotion_starts_at or promotion_ends_at:
                 has_promotion = True
-                logger.debug(
-                    f"Time-limited promotion: {promotion_starts_at} - {promotion_ends_at}"
-                )
+                logger.debug(f"Time-limited promotion: {promotion_starts_at} - {promotion_ends_at}")
 
         currency_path = field_mappings.get("currency", "offers.priceCurrency")
         currency = FieldMapper.get_value(json_ld, currency_path, default="EUR")
