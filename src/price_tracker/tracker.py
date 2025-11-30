@@ -90,6 +90,7 @@ class PriceTracker:
                     else None,
                     "currency": product_data.currency,
                     "availability": product_data.availability,
+                    "is_marketplace_only": product_data.is_marketplace_only,
                     "availability_text": product_data.availability_text,
                     "has_promotion": product_data.has_promotion,
                     "discount_percentage": product_data.discount_percentage,

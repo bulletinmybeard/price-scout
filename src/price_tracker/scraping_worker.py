@@ -29,7 +29,13 @@ def scrape_single_url(url, tracker, factory, check, db_url, group_name=None):
             product = tracker.fetch_product_only(url, provider_name)
             elapsed = time.time() - start_time
 
-            if not product or not product.name or product.current_price is None:
+            if not product:
+                error_msg = "Extraction failed - no product data returned"
+                return "error", url, error_msg, elapsed
+
+            # Allow marketplace-only products without price
+            price_missing = product.current_price is None and not product.is_marketplace_only
+            if not product.name or price_missing:
                 error_msg = "Extraction failed - missing required fields (name or price)"
                 return "error", url, error_msg, elapsed
 
@@ -39,7 +45,13 @@ def scrape_single_url(url, tracker, factory, check, db_url, group_name=None):
             product, _db_result = tracker.track_product_url(url, provider_name, track_to_db=True)
             elapsed = time.time() - start_time
 
-            if not product or not product.name or product.current_price is None:
+            if not product:
+                error_msg = "Extraction failed - no product data returned"
+                return "error", url, error_msg, elapsed
+
+            # Allow marketplace-only products without price
+            price_missing = product.current_price is None and not product.is_marketplace_only
+            if not product.name or price_missing:
                 error_msg = "Extraction failed - missing required fields (name or price)"
                 return "error", url, error_msg, elapsed
 

@@ -348,12 +348,15 @@ class AsyncBaseProvider(ABC):
         self,
         url: str,
         wait_for_selector: str | None = None,
-        timeout: int = 60000,
+        timeout: int | None = None,
         wait_until: PlaywrightWaitUntil = "domcontentloaded",
         warm_up: bool = True,
     ) -> Page | None:
         try:
             url = self._clean_url(url)
+
+            if timeout is None:
+                timeout = self.config.scraping.timeout_seconds * 1000
 
             page = await self.create_page()
 
@@ -365,7 +368,10 @@ class AsyncBaseProvider(ABC):
             if self.headless and warm_up and self.base_url:
                 try:
                     logger.debug(f"Warm-up: visiting homepage {self.base_url}")
-                    await page.goto(self.base_url, wait_until="domcontentloaded", timeout=10000)
+                    warmup_timeout = min(10000, timeout // 2)
+                    await page.goto(
+                        self.base_url, wait_until="domcontentloaded", timeout=warmup_timeout
+                    )
 
                     # Simulate brief homepage interaction
                     await asyncio.sleep(_rng.uniform(0.5, 1.5))

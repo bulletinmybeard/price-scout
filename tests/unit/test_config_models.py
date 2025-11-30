@@ -208,7 +208,7 @@ class TestScrapingConfig:
         assert config.user_agent_rotation is True
         assert config.request_delay_seconds == 2.0
         assert config.max_retries == 3
-        assert config.timeout_seconds == 30
+        assert config.timeout_seconds == 60
         assert config.strip_query_params is True
 
         assert config.use_playwright is True

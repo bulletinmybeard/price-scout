@@ -311,6 +311,8 @@ def track(
             if json_output:
                 output_multi_json_response(results)
             else:
+                failed_urls = {url for status, url, *_ in results if status == "error"}
+
                 # Get latest snapshots with previous for change detection
                 snapshots_with_changes = db_manager.get_latest_snapshots_with_previous(unique_urls)
 
@@ -320,7 +322,9 @@ def track(
                     s.get("latest") is not None for s in snapshots_with_changes.values()
                 )
                 if has_valid_snapshots:
-                    display_comparison_table_with_changes(snapshots_with_changes, console)
+                    display_comparison_table_with_changes(
+                        snapshots_with_changes, console, failed_urls=failed_urls
+                    )
                 else:
                     console.print("[yellow]No snapshots found for comparison.[/yellow]")
 

@@ -30,6 +30,7 @@ class BaseProduct:
     tags: list[str] = field(default_factory=list)  # Product tags/labels
 
     availability: bool = True  # Is product available for purchase
+    is_marketplace_only: bool = False
     stock_quantity: int | None = None  # Number of items in stock
     availability_text: str | None = None  # e.g., "In stock", "Low stock"
     max_order_quantity: int | None = None  # Maximum items per order
@@ -97,6 +98,7 @@ class BaseProduct:
             "category": self.category,
             "tags": self.tags,
             "availability": self.availability,
+            "is_marketplace_only": self.is_marketplace_only,
             "stock_quantity": self.stock_quantity,
             "availability_text": self.availability_text,
             "max_order_quantity": self.max_order_quantity,

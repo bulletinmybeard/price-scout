@@ -32,9 +32,9 @@ class ScrapingConfig(BaseModel):
         description="Maximum retry attempts for failed requests",
     )
     timeout_seconds: int = Field(
-        default=30,
+        default=60,
         ge=1,
-        description="Request timeout in seconds",
+        description="Page navigation timeout in seconds",
     )
     strip_query_params: bool = Field(
         default=True,

@@ -324,7 +324,9 @@ class ConfigurableProvider(AsyncBaseProvider):
 
             if promotion_starts_at or promotion_ends_at:
                 has_promotion = True
-                logger.debug(f"Time-limited promotion: {promotion_starts_at} - {promotion_ends_at}")
+                logger.debug(
+                    f"Time-limited promotion: {promotion_starts_at} - {promotion_ends_at}"
+                )
 
         currency_path = field_mappings.get("currency", "offers.priceCurrency")
         currency = FieldMapper.get_value(json_ld, currency_path, default="EUR")
@@ -477,8 +479,14 @@ class ConfigurableProvider(AsyncBaseProvider):
 
         extracted_data = await extractor.extract_all_fields(page, field_selectors)
 
+        is_marketplace_only_detected = extracted_data.get("is_marketplace_only", False)
+
         if not extracted_data:
             logger.debug("No data extracted via selectors")
+            return None
+
+        if not extracted_data.get("name") and not is_marketplace_only_detected:
+            logger.debug("No name extracted and not marketplace-only")
             return None
 
         logger.debug(f"✓ Extracted {len(extracted_data)} fields via selectors")
@@ -542,6 +550,15 @@ class ConfigurableProvider(AsyncBaseProvider):
             # Convert string to boolean
             availability = availability.lower() in ("true", "yes", "available", "in stock")
 
+        is_marketplace_only = extracted_data.get("is_marketplace_only", False)
+        if isinstance(is_marketplace_only, bool):
+            pass
+        elif is_marketplace_only is not None:
+            # check_exists returns True if element found, False otherwise
+            is_marketplace_only = bool(is_marketplace_only)
+        else:
+            is_marketplace_only = False
+
         detected_language = self.provider_config.language
         if not detected_language:
             detected_language = await self.extract_language(page)
@@ -568,6 +585,7 @@ class ConfigurableProvider(AsyncBaseProvider):
             brand=extracted_data.get("brand", ""),
             category=category,
             availability=availability,
+            is_marketplace_only=is_marketplace_only,
             description=extracted_data.get("description", ""),
             weight=extracted_data.get("weight", ""),
             amount_value=product_details.get("amount_value"),
