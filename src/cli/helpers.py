@@ -13,6 +13,7 @@ from src.config.config_loader import (
     is_docker_environment,
     load_typed_config,
 )
+from src.config.models import ProviderConfig
 from src.database.db_manager import DatabaseManager
 from src.utils.fuzzy_matcher import format_similarity_percentage
 
@@ -126,7 +127,7 @@ def extract_amount_from_name(product_name: str) -> str | None:
     return None
 
 
-def detect_provider_from_url(url: str, factory) -> tuple[str | None, dict[str, Any] | None]:
+def detect_provider_from_url(url: str, factory) -> tuple[str | None, ProviderConfig | None]:
     """Detect provider name from URL by matching scheme+host against base_url configs."""
     parsed_url = urlparse(url)
     url_base = f"{parsed_url.scheme}://{parsed_url.netloc}".lower()

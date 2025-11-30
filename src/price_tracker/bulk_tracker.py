@@ -1,7 +1,8 @@
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from contextlib import redirect_stderr, redirect_stdout
+from contextlib import contextmanager, redirect_stderr
 from io import StringIO
+import logging
 import sys
 from threading import Lock
 from typing import Any
@@ -23,6 +24,23 @@ from src.database.db_manager import DatabaseManager
 from src.price_tracker.scraping_worker import scrape_single_url
 
 logger = get_logger(__name__)
+
+
+@contextmanager
+def suppress_loggers_during_display():
+    """Suppress loggers during Rich Live display to prevent visual glitches."""
+    loggers_to_suppress = ["src", "config", "playwright", "urllib3", "asyncio", "pyld"]
+    original_levels = {}
+
+    try:
+        for name in loggers_to_suppress:
+            log = logging.getLogger(name)
+            original_levels[name] = log.level
+            log.setLevel(logging.CRITICAL)
+        yield
+    finally:
+        for name, level in original_levels.items():
+            logging.getLogger(name).setLevel(level)
 
 
 class BulkTracker:
@@ -195,7 +213,7 @@ class BulkTracker:
         output_suppressor = StringIO() if self.json_output else sys.stderr
 
         with (
-            redirect_stdout(output_suppressor),
+            suppress_loggers_during_display(),
             redirect_stderr(output_suppressor),
             Live(progress_group, refresh_per_second=4, console=get_console()),
         ):

@@ -19,7 +19,7 @@ logger = get_logger(__name__)
 
 @click.group()
 @click.pass_context
-def compare(ctx: click.Context):
+def compare(_ctx: click.Context):
     """Compare prices across providers, groups, or products."""
     pass
 
@@ -37,7 +37,7 @@ def compare(ctx: click.Context):
     "--refresh", is_flag=True, help="Refresh prices before comparison (scrapes latest data)"
 )
 @click.pass_context
-def compare_groups(ctx: click.Context, group_names: tuple[str, ...], refresh: bool):
+def compare_groups(_ctx: click.Context, group_names: tuple[str, ...], refresh: bool):
     """
     Compare total basket costs across multiple product groups.
 

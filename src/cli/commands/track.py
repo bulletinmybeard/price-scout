@@ -7,26 +7,18 @@ from typing import Any, cast
 from chalkbox.logging.bridge import get_logger
 import click
 
-from src.cli.chalkbox_helpers import show_error, show_info
+from src.cli.chalkbox_helpers import show_error
 from src.cli.formatters import (
     display_comparison_table_with_changes,
-    display_table_output,
-    output_json_response,
     output_multi_json_response,
 )
-from src.cli.helpers import detect_provider_from_url, get_console, get_db_url
+from src.cli.helpers import get_console, get_db_url
 from src.config.config_loader import load_typed_config
 from src.database.db_manager import DatabaseManager
 from src.price_tracker.bulk_tracker import BulkTracker
-from src.price_tracker.group_helpers import (
-    associate_tracked_page_with_group,
-    auto_associate_with_groups,
-    handle_fuzzy_group_matching,
-)
+from src.price_tracker.group_helpers import handle_fuzzy_group_matching
 from src.price_tracker.tracker import PriceTracker
 from src.providers import get_factory
-from src.providers.base_product import BaseProduct
-from src.utils.datetime_utils import now_in_configured_tz
 
 logger = get_logger(__name__)
 
@@ -288,258 +280,64 @@ def track(
     # In JSON mode, suppress stderr to hide event loop cleanup warnings
     stderr_suppressor = StringIO() if json_output else sys.stderr
 
-    # Handle multiple URLs with BulkTracker
-    if len(unique_urls) > 1:
-        try:
-            with redirect_stderr(stderr_suppressor):
-                # Initialize database and factory (write mode for tracking)
-                db_manager = DatabaseManager(get_db_url(), read_only=False)
-                # Pass None if user didn't specify, so PriceTracker reads from config.yaml
-                headless_mode = None if headed is None else not headed
-                tracker = PriceTracker(db_manager, headless=headless_mode)
-                provider_config_override = ctx.obj.get("provider_config")
-                factory = get_factory(provider_config=provider_config_override)
-
-                # Fuzzy group matching - unified handling
-                resolved_group_name = handle_fuzzy_group_matching(group, db_manager, json_output)
-
-                # Use BulkTracker for multi-URL operations
-                bulk_tracker = BulkTracker(
-                    tracker=tracker,
-                    factory=factory,
-                    db_manager=db_manager,
-                    check=check,
-                    cached=cached,
-                    json_output=json_output,
-                )
-
-                # Track all URLs in parallel
-                results = bulk_tracker.track_multiple_urls(unique_urls, resolved_group_name)
-
-                # Output results
-                if json_output:
-                    output_multi_json_response(results)
-                else:
-                    # Get latest snapshots with previous for change detection
-                    snapshots_with_changes = db_manager.get_latest_snapshots_with_previous(
-                        unique_urls
-                    )
-
-                    console = get_console()
-                    console.print()  # Add blank line before table
-                    if snapshots_with_changes:
-                        display_comparison_table_with_changes(snapshots_with_changes, console)
-                    else:
-                        console.print("[yellow]No snapshots found for comparison.[/yellow]")
-
-                return
-
-        except click.Abort:
-            raise
-        except KeyboardInterrupt:
-            # BulkTracker already handled graceful shutdown
-            return
-        except Exception as e:
-            error_msg = str(e)
-            if json_output:
-                output_multi_json_response([], error=error_msg)
-            else:
-                show_error("Failed to track multiple URLs", details=error_msg)
-            raise click.Abort() from e
-
-    # SINGLE-URL LOGIC
+    # Handle all product URLs with BulkTracker
     try:
         with redirect_stderr(stderr_suppressor):
-            # Use first URL for single-URL mode
-            single_url = unique_urls[0]
-
-            # Auto-detect provider
-            provider_config_override = ctx.obj.get("provider_config")
-            factory = get_factory(provider_config=provider_config_override)
-            provider_name, _provider_config = detect_provider_from_url(single_url, factory)
-
-            if not provider_name:
-                error_msg = f"Could not detect provider for URL: {single_url}\nAvailable providers: {', '.join(factory.list_providers())}"
-                if json_output:
-                    output_json_response(None, error_msg)
-                    return
-                else:
-                    show_error(
-                        "Could not detect provider",
-                        details=f"URL: {single_url}\n\nAvailable providers: {', '.join(factory.list_providers())}",
-                    )
-                    raise click.Abort()
-
-            # Initialize tracker (write mode for tracking)
+            # Initialize database and factory (write mode for tracking)
             db_manager = DatabaseManager(get_db_url(), read_only=False)
             # Pass None if user didn't specify, so PriceTracker reads from config.yaml
             headless_mode = None if headed is None else not headed
             tracker = PriceTracker(db_manager, headless=headless_mode)
+            provider_config_override = ctx.obj.get("provider_config")
+            factory = get_factory(provider_config=provider_config_override)
 
             # Fuzzy group matching - unified handling
             resolved_group_name = handle_fuzzy_group_matching(group, db_manager, json_output)
 
-            # Check cache if --cached flag is set
-            if cached:
-                cached_snapshot = db_manager.get_latest_snapshot(single_url)
-                if cached_snapshot:
-                    # Cache HIT - return cached snapshot data immediately
-                    if json_output:
-                        # Output the full snapshot as JSON
-                        click.echo(json.dumps(cached_snapshot, indent=2, default=str))
-                        return
-                    else:
-                        # Display cache hit message and snapshot summary
-                        console = get_console()
-                        console.print("[green]✓ Cache HIT[/green] - Returning cached snapshot")
-                        console.print(
-                            f"[dim]Scraped at: {cached_snapshot.get('scraped_at')}[/dim]\n"
-                        )
+            # Use BulkTracker for all URL operations (single or multiple)
+            bulk_tracker = BulkTracker(
+                tracker=tracker,
+                factory=factory,
+                db_manager=db_manager,
+                check=check,
+                cached=cached,
+                json_output=json_output,
+            )
 
-                        # Convert snapshot to minimal product-like dict for display
-                        _product_display = {
-                            "name": cached_snapshot.get("name"),
-                            "brand": cached_snapshot.get("brand"),
-                            "current_price": cached_snapshot.get("current_price"),
-                            "currency": cached_snapshot.get("currency"),
-                            "availability": cached_snapshot.get("availability"),
-                            "provider": cached_snapshot.get("provider"),
-                        }
-                        db_result = {
-                            "snapshot_id": cached_snapshot.get("snapshot_id"),
-                            "product_name": cached_snapshot.get("name"),
-                            "provider": cached_snapshot.get("provider"),
-                            "price": cached_snapshot.get("current_price"),
-                            "currency": cached_snapshot.get("currency"),
-                            "is_available": cached_snapshot.get("availability"),
-                            "scraped_at": cached_snapshot.get("scraped_at"),
-                        }
-
-                        # Create a mock product object for display
-                        product = BaseProduct(
-                            url=single_url,
-                            name=cached_snapshot.get("name") or "Unknown",
-                            brand=cached_snapshot.get("brand"),
-                            current_price=cached_snapshot.get("current_price"),
-                            currency=cached_snapshot.get("currency") or "EUR",
-                            availability=bool(cached_snapshot.get("availability")),
-                            extraction_method="cached",
-                        )
-                        display_table_output(product, db_result, full, console)
-                        return
-                else:
-                    # Cache MISS - continue with normal scraping
-                    if not json_output:
-                        show_info(
-                            "Cache MISS",
-                            details="No cached data found. Fetching fresh product data...",
-                        )
-
-            # Track or check product
-            db_result_tracking: dict[Any, Any] | None
-            if check:
-                # Fetch only, no DB tracking
-                product = tracker.fetch_product_only(single_url, provider_name)
-                db_result_tracking = None
-            else:
-                # Full tracking with DB
-                product, db_result_tracking = tracker.track_product_url(
-                    single_url, provider_name, track_to_db=True
-                )
-
-                # Check if URL was canonicalized and show info message
-                if product and product.raw_data.get("_canonicalization", {}).get(
-                    "was_canonicalized"
-                ):
-                    canonicalization = product.raw_data["_canonicalization"]
-                    if not json_output:
-                        console = get_console()
-                        console.print("\n[cyan]i Using canonical URL[/cyan]")
-                        console.print(f"  [dim]Provided:[/dim]  {canonicalization['original_url']}")
-                        console.print(
-                            f"  [dim]Canonical:[/dim] {canonicalization['canonical_url']}\n"
-                        )
-
-                # Add/update tracked_pages entry (same as check-scheduled)
-                # Use product.url (canonical URL) instead of single_url for database operations
-                if product:
-                    try:
-                        tracked_url = product.url  # Use canonical URL for tracking
-                        existing_page = db_manager.get_tracked_page(tracked_url)
-                        if existing_page:
-                            db_manager.update_last_checked(tracked_url, product.current_price)
-                        else:
-                            extraction_config = (
-                                _provider_config.get("extraction", {}) if _provider_config else {}
-                            )
-                            json_ld_config = extraction_config.get("json_ld", {})
-                            offer_strategy = json_ld_config.get("offer_selection_strategy", "first")
-
-                            page_data = {
-                                "url": tracked_url,
-                                "provider": provider_name,
-                                "offer_selection_strategy": offer_strategy,
-                                "enabled": True,
-                                "last_checked": now_in_configured_tz(),
-                                "last_price": product.current_price,
-                            }
-                            db_manager.add_tracked_page(page_data)
-
-                        # Handle group association (priority: --group flag > config.yaml)
-                        if resolved_group_name:
-                            # Create group if doesn't exist and associate
-                            associate_tracked_page_with_group(
-                                tracked_url, resolved_group_name, db_manager
-                            )
-                        else:
-                            # Fallback: Auto-associate with product groups from config
-                            associated_groups = auto_associate_with_groups(tracked_url, db_manager)
-                            if associated_groups:
-                                logger.debug(
-                                    f"Auto-associated URL with groups: {', '.join(associated_groups)}"
-                                )
-
-                    except Exception as e:
-                        # Log foreign key constraint errors as debug (they don't affect tracking)
-                        # NOTE: This is expected when updating pages that are already referenced in product groups
-                        if "foreign key constraint" in str(e).lower():
-                            logger.debug(
-                                f"Foreign key constraint during page update for {single_url}: {e}"
-                            )
-                            logger.debug(
-                                "This is expected behavior when a tracked page is already associated with a product group"
-                            )
-                        else:
-                            # Silently log error to avoid disrupting user output
-                            logger.error(f"Failed to add tracked_page for {single_url}: {e}")
-
-            # Check if extraction failed
-            if not product:
-                error_msg = f"Failed to extract product data from: {single_url}"
-                if json_output:
-                    output_json_response(None, error_msg)
-                    return
-                else:
-                    show_error("Failed to extract product data", details=f"URL: {single_url}")
-                    raise click.Abort()
+            # Track all URLs in parallel
+            results = bulk_tracker.track_multiple_urls(unique_urls, resolved_group_name)
 
             # Output results
             if json_output:
-                output_json_response(product, None)
+                output_multi_json_response(results)
             else:
+                # Get latest snapshots with previous for change detection
+                snapshots_with_changes = db_manager.get_latest_snapshots_with_previous(unique_urls)
+
                 console = get_console()
-                display_table_output(product, db_result_tracking, full, console)
+                console.print()  # Add blank line before table
+                has_valid_snapshots = any(
+                    s.get("latest") is not None for s in snapshots_with_changes.values()
+                )
+                if has_valid_snapshots:
+                    display_comparison_table_with_changes(snapshots_with_changes, console)
+                else:
+                    console.print("[yellow]No snapshots found for comparison.[/yellow]")
+
+            return None
 
     except click.Abort:
-        # Already handled above
         raise
+    except KeyboardInterrupt:
+        # BulkTracker already handled graceful shutdown
+        return
     except Exception as e:
         error_msg = str(e)
         if json_output:
-            output_json_response(None, error_msg)
+            output_multi_json_response([], error=error_msg)
         else:
-            show_error("Failed to track product", details=error_msg)
-            raise click.Abort() from e
+            show_error("Failed to track products", details=error_msg)
+        raise click.Abort() from e
 
 
 track = cast(click.Command, track)
