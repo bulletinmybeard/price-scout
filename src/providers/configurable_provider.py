@@ -1,4 +1,5 @@
 import asyncio
+from datetime import datetime
 from typing import Any
 
 from bs4 import BeautifulSoup
@@ -303,6 +304,30 @@ class ConfigurableProvider(AsyncBaseProvider):
                 f"({discount_percentage:.1f}% off)"
             )
 
+        promotion_starts_at = None
+        promotion_ends_at = None
+        if isinstance(offers, dict):
+            price_valid_until = offers.get("priceValidUntil")
+            valid_from = offers.get("validFrom")
+
+            # If either date field exists, this is a promotional price
+            if price_valid_until or valid_from:
+                has_promotion = True
+                if valid_from:
+                    try:
+                        promotion_starts_at = datetime.fromisoformat(valid_from)
+                    except (ValueError, TypeError):
+                        logger.debug(f"Could not parse validFrom: {valid_from}")
+                if price_valid_until:
+                    try:
+                        promotion_ends_at = datetime.fromisoformat(price_valid_until)
+                    except (ValueError, TypeError):
+                        logger.debug(f"Could not parse priceValidUntil: {price_valid_until}")
+                if promotion_starts_at or promotion_ends_at:
+                    logger.debug(
+                        f"Time-limited promotion: {promotion_starts_at} - {promotion_ends_at}"
+                    )
+
         currency_path = field_mappings.get("currency", "offers.priceCurrency")
         currency = FieldMapper.get_value(json_ld, currency_path, default="EUR")
 
@@ -417,6 +442,8 @@ class ConfigurableProvider(AsyncBaseProvider):
             price_per_unit=price_per_unit,
             has_promotion=has_promotion,
             discount_percentage=discount_percentage,
+            promotion_starts_at=promotion_starts_at,
+            promotion_ends_at=promotion_ends_at,
             sku=sku,
             gtin=gtin,
             brand=brand,

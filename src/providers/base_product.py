@@ -18,6 +18,7 @@ class BaseProduct:
     has_promotion: bool = False  # Is product currently on promotion/sale
     discount_percentage: float | None = None  # Discount % if on promotion
     promotion_text: str | None = None  # e.g., "2 for 1", "Save 50%"
+    promotion_starts_at: datetime | None = None  # Promotion start date
     promotion_ends_at: datetime | None = None  # Promotion end date
 
     sku: str | None = None  # Store's internal product code
@@ -83,6 +84,9 @@ class BaseProduct:
             "has_promotion": self.has_promotion,
             "discount_percentage": self.discount_percentage,
             "promotion_text": self.promotion_text,
+            "promotion_starts_at": self.promotion_starts_at.isoformat()
+            if self.promotion_starts_at
+            else None,
             "promotion_ends_at": self.promotion_ends_at.isoformat()
             if self.promotion_ends_at
             else None,
@@ -125,6 +129,8 @@ class BaseProduct:
     def from_dict(cls, data: dict[str, Any]) -> "BaseProduct":
         if data.get("extracted_at") and isinstance(data["extracted_at"], str):
             data["extracted_at"] = datetime.fromisoformat(data["extracted_at"])
+        if data.get("promotion_starts_at") and isinstance(data["promotion_starts_at"], str):
+            data["promotion_starts_at"] = datetime.fromisoformat(data["promotion_starts_at"])
         if data.get("promotion_ends_at") and isinstance(data["promotion_ends_at"], str):
             data["promotion_ends_at"] = datetime.fromisoformat(data["promotion_ends_at"])
 

@@ -93,6 +93,8 @@ class PriceTracker:
                     "availability_text": product_data.availability_text,
                     "has_promotion": product_data.has_promotion,
                     "discount_percentage": product_data.discount_percentage,
+                    "promotion_starts_at": product_data.promotion_starts_at,
+                    "promotion_ends_at": product_data.promotion_ends_at,
                     "sku": product_data.sku,
                     "gtin": product_data.gtin,
                     "image_url": product_data.image,

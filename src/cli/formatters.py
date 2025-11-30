@@ -1,3 +1,4 @@
+from datetime import datetime
 import json
 from typing import Any
 
@@ -83,6 +84,30 @@ def _format_promotion(has_promotion: bool, discount_pct: float | None = None) ->
         return "✓ Yes"
     else:
         return "✗ No"
+
+
+def _format_promotion_dates(
+    has_promotion: bool,
+    starts_at: datetime | None,
+    ends_at: datetime | None,
+    url: str | None = None,
+) -> str:
+    """Format promotion with date range and optional link: ✓ → 01.12 - 07.12 or ✗ No"""
+    if not has_promotion:
+        return "✗ No"
+
+    if starts_at and ends_at:
+        date_str = f"{starts_at.strftime('%d.%m')} - {ends_at.strftime('%d.%m')}"
+    elif ends_at:
+        date_str = f"until {ends_at.strftime('%d.%m')}"
+    elif starts_at:
+        date_str = f"from {starts_at.strftime('%d.%m')}"
+    else:
+        date_str = "Yes"
+
+    if url:
+        return f"[link={url}]→ {date_str}[/link]"
+    return f"→ {date_str}"
 
 
 def _truncate_text(text: str, max_length: int, suffix: str = "...") -> str:
@@ -437,15 +462,6 @@ def _calculate_change_indicators(
         else:
             indicators.append("✓ Back in stock")
 
-    latest_promo = latest.get("has_promotion")
-    previous_promo = previous.get("has_promotion")
-
-    if latest_promo != previous_promo:
-        if latest_promo:
-            indicators.append("🏷️ New promo")
-        else:
-            indicators.append("✗ Promo ended")
-
     return ", ".join(indicators) if indicators else "✓ Same"
 
 
@@ -456,7 +472,16 @@ def display_comparison_table_with_changes(
 
     table = Table(
         title="Product Price Comparison",
-        headers=["Provider", "Product", "Amount", "Price", "Change", "Available", "Scraped At"],
+        headers=[
+            "Provider",
+            "Product",
+            "Amount",
+            "Price",
+            "Promotion",
+            "Change",
+            "Available",
+            "Scraped At",
+        ],
     )
 
     total_products = 0
@@ -489,17 +514,35 @@ def display_comparison_table_with_changes(
             price_changes["increased"] += 1
         if "↓" in change_str:
             price_changes["decreased"] += 1
-        if "🏷️" in change_str or "promo" in change_str.lower():
+
+        latest_promo = latest.get("has_promotion", False)
+        previous_promo = previous.get("has_promotion", False) if previous else False
+        if latest_promo and not previous_promo:
             price_changes["promo"] += 1
 
         availability_str = _format_boolean(latest.get("availability", False))
         scraped_at = _format_timestamp(latest.get("scraped_at", "N/A"))
+
+        promo_starts = latest.get("promotion_starts_at")
+        promo_ends = latest.get("promotion_ends_at")
+        if promo_starts and isinstance(promo_starts, str):
+            promo_starts = datetime.fromisoformat(promo_starts)
+        if promo_ends and isinstance(promo_ends, str):
+            promo_ends = datetime.fromisoformat(promo_ends)
+
+        promotion_str = _format_promotion_dates(
+            latest.get("has_promotion", False),
+            promo_starts,
+            promo_ends,
+            url=latest.get("url"),
+        )
 
         table.add_row(
             provider_display,
             product_name,
             amount_str,
             price_str,
+            promotion_str,
             change_str,
             availability_str,
             scraped_at,
