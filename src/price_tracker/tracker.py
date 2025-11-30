@@ -16,7 +16,6 @@ class PriceTracker:
     """Orchestrates price tracking across multiple store providers."""
 
     def __init__(self, db_manager: DatabaseManager, headless: bool | None = None):
-        """Initialize the PriceTracker."""
         self.db_manager = db_manager
         self.factory = get_factory()
 
@@ -32,7 +31,6 @@ class PriceTracker:
         )
 
     def get_provider(self, provider_name: str):
-        """Get a provider instance by name."""
         try:
             return self.factory.get_provider(provider_name, headless=self.headless)
         except ValueError as e:
@@ -40,15 +38,12 @@ class PriceTracker:
             return None
 
     def list_providers(self) -> list[str]:
-        """Get a list of all available provider names."""
         return self.factory.list_providers()
 
     def fetch_product_only(self, url: str, provider_name: str):
-        """Fetch product details without tracking to database."""
         return asyncio.run(self._fetch_product_only_async(url, provider_name))
 
     async def _fetch_product_only_async(self, url: str, provider_name: str):
-        """Async implementation of fetch_product_only."""
         try:
             async with self.factory.get_provider(provider_name, headless=self.headless) as provider:
                 product = await provider.get_product_details(url)
@@ -62,13 +57,11 @@ class PriceTracker:
     def track_product_url(
         self, url: str, provider_name: str, track_to_db: bool = True
     ) -> tuple[Any, dict | None]:
-        """Track a product from a specific URL."""
         return asyncio.run(self._track_product_url_async(url, provider_name, track_to_db))
 
     async def _track_product_url_async(
         self, url: str, provider_name: str, track_to_db: bool = True
     ) -> tuple[Any, dict | None]:
-        """Async implementation of track_product_url."""
         logger.debug(f"Tracking product from: {url}")
 
         try:

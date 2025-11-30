@@ -109,7 +109,6 @@ def compare_groups(ctx: click.Context, group_names: tuple[str, ...], refresh: bo
 
 
 def _display_provider_totals(providers: list[dict], stats: dict):
-    """Display provider basket totals with winner highlighting."""
     table = RichTable(
         title="Basket Comparison - Provider Totals",
         box=box.ROUNDED,
@@ -169,7 +168,6 @@ def _display_provider_totals(providers: list[dict], stats: dict):
 
 
 def _display_category_subtotals(categories: list[dict]):
-    """Display category subtotals grouped by provider."""
     if not categories:
         return
 
@@ -197,7 +195,6 @@ def _display_category_subtotals(categories: list[dict]):
 
 
 def _display_product_breakdown(products: list[dict]):
-    """Display individual products grouped by provider and category."""
     if not products:
         return
 
@@ -248,7 +245,6 @@ def _display_product_breakdown(products: list[dict]):
 
 
 def _display_basket_statistics(stats: dict):
-    """Display basket comparison statistics with unavailable counts."""
     if not stats or not stats.get("price_ranges"):
         return
 
@@ -273,15 +269,12 @@ def _display_basket_statistics(stats: dict):
 
 
 def _format_provider_counts(counts: dict[str, int]) -> str:
-    """Format provider count dictionary for display."""
     if not counts:
         return "  None"
     return "\n".join(f"  {provider}: {count}" for provider, count in counts.items())
 
 
 def _refresh_group_products(group_name, db_manager, tracker, factory):
-    """Refresh all products in a product group."""
-
     group = db_manager.get_group_by_name(group_name)
     if not group:
         return (0, 0)

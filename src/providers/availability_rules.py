@@ -40,7 +40,6 @@ class AvailabilityRuleEngine:
 
     @staticmethod
     def _evaluate_single_rule(data: dict[str, Any], rule: dict[str, Any]) -> bool:
-        """Evaluate a single rule."""
         rule_type = rule.get("type")
 
         if rule_type == "field_exists":
@@ -55,7 +54,6 @@ class AvailabilityRuleEngine:
 
     @staticmethod
     def _evaluate_field_exists(data: dict[str, Any], rule: dict[str, Any]) -> bool:
-        """Check if field exists and has non-empty value."""
         field_path = rule.get("field")
         if not field_path:
             return False
@@ -72,7 +70,6 @@ class AvailabilityRuleEngine:
 
     @staticmethod
     def _evaluate_field_comparison(data: dict[str, Any], rule: dict[str, Any]) -> bool:
-        """Compare field value with expected value."""
         field_path = rule.get("field")
         operator = rule.get("operator")
         expected_value = rule.get("value")
@@ -123,7 +120,6 @@ class AvailabilityRuleEngine:
 
     @staticmethod
     def _evaluate_field_pattern(data: dict[str, Any], rule: dict[str, Any]) -> bool:
-        """Match field value against regex pattern."""
         field_path = rule.get("field")
         pattern = rule.get("pattern")
 

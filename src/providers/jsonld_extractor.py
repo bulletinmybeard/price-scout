@@ -70,7 +70,6 @@ class JSONLDExtractor:
     """Standards-based JSON-LD extractor using PyLD library."""
 
     def __init__(self):
-        """Initialize the JSON-LD extractor."""
         self.product_frame = PRODUCT_FRAME
         self.product_group_frame = PRODUCT_GROUP_FRAME
 
@@ -133,13 +132,11 @@ class JSONLDExtractor:
             logger.debug(f"✓ Extracted {type_name} via PyLD framing: {name}")
 
     def extract_product(self, json_ld_data: dict | list) -> dict | None:
-        """Extract Product from JSON-LD data."""
         return self._extract_with_frame(
             json_ld_data, frame=self.product_frame, expected_type="Product", type_name="Product"
         )
 
     def extract_product_group(self, json_ld_data: dict | list) -> dict | None:
-        """Extract ProductGroup with variants from JSON-LD data."""
         return self._extract_with_frame(
             json_ld_data,
             frame=self.product_group_frame,
@@ -149,7 +146,6 @@ class JSONLDExtractor:
 
     @staticmethod
     def select_best_variant(product_group: dict, strategy: str = "first_complete") -> dict | None:
-        """Select the best variant from a ProductGroup."""
         variants = product_group.get("hasVariant", [])
 
         if not variants:
@@ -209,7 +205,6 @@ class JSONLDExtractor:
             return variants[0]
 
     def extract_from_html(self, html: str) -> dict | None:
-        """Extract and parse JSON-LD from HTML content."""
         from bs4 import BeautifulSoup
 
         try:
@@ -253,5 +248,4 @@ class JSONLDExtractor:
 
 
 def create_extractor() -> JSONLDExtractor:
-    """Factory function to create a new JSONLDExtractor instance."""
     return JSONLDExtractor()

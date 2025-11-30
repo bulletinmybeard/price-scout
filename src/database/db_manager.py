@@ -112,7 +112,6 @@ class DatabaseManager:
             return snapshot_id
 
     def export_snapshots_to_parquet(self) -> None:
-        """Export all database tables to Parquet files using atomic swap."""
         # Use global lock to ensure only one thread exports at a time
         with _parquet_export_lock:
             try:
@@ -205,7 +204,6 @@ class DatabaseManager:
             return [s for s in snapshots if s is not None]
 
     def get_snapshots_by_provider(self, provider: str, days: int = 7) -> list[dict[str, Any]]:
-        """Get recent snapshots for a specific provider."""
         since = now_in_configured_tz() - timedelta(days=days)
 
         with self.get_connection() as conn:
@@ -222,7 +220,6 @@ class DatabaseManager:
     def get_snapshot_history_batch(
         self, urls: list[str], limit_per_url: int = 3
     ) -> dict[str, list[dict[str, Any]]]:
-        """Get last N snapshots for multiple URLs."""
         if not urls:
             return {}
 
@@ -261,7 +258,6 @@ class DatabaseManager:
     def get_latest_snapshots_with_previous(
         self, urls: list[str]
     ) -> dict[str, dict[str, dict[str, Any] | None]]:
-        """Get latest snapshot + previous snapshot for each URL to detect changes."""
         with self.get_connection() as conn:
             # Use window function to rank snapshots per URL
             placeholders = ", ".join(["?"] * len(urls))
@@ -358,14 +354,12 @@ class DatabaseManager:
             return new_id
 
     def get_tracked_page(self, url: str) -> dict[str, Any] | None:
-        """Get tracking state for a URL."""
         with self.get_connection() as conn:
             sql = "SELECT * FROM tracked_pages WHERE url = ?"
             result = conn.execute(sql, [url]).fetchone()
             return self._row_to_tracked_page_dict(result) if result else None
 
     def get_all_tracked_pages(self, enabled_only: bool = True) -> list[dict[str, Any]]:
-        """Get all tracked pages."""
         with self.get_connection() as conn:
             sql = "SELECT * FROM tracked_pages"
             if enabled_only:
@@ -410,7 +404,6 @@ class DatabaseManager:
             logger.debug(f"Skipped update for {url[:50]} (referenced by product group)")
 
     def get_price_trend(self, url: str, days: int = 30) -> list[dict[str, Any]]:
-        """Calculate price trend over time."""
         since = now_in_configured_tz() - timedelta(days=days)
 
         with self.get_connection() as conn:
@@ -440,7 +433,6 @@ class DatabaseManager:
             ]
 
     def get_active_promotions(self, provider: str | None = None) -> list[dict[str, Any]]:
-        """Get all products currently on promotion (from latest snapshots)."""
         with self.get_connection() as conn:
             # Get latest snapshot per URL
             sql = """
@@ -472,7 +464,6 @@ class DatabaseManager:
             return [s for s in snapshots if s is not None]
 
     def get_price_statistics(self, url: str, days: int = 90) -> dict[str, Any]:
-        """Calculate price statistics for a product."""
         since = now_in_configured_tz() - timedelta(days=days)
 
         with self.get_connection() as conn:
@@ -603,14 +594,12 @@ class DatabaseManager:
             return new_group_id
 
     def get_group_by_name(self, name: str) -> dict[str, Any] | None:
-        """Get group by name."""
         with self.get_connection() as conn:
             sql = "SELECT * FROM product_groups WHERE name = ?"
             result = conn.execute(sql, [name]).fetchone()
             return self._row_to_group_dict(result) if result else None
 
     def get_all_groups(self) -> list[dict[str, Any]]:
-        """Get all product groups with page counts."""
         with self.get_connection() as conn:
             sql = """
                 SELECT
@@ -639,7 +628,6 @@ class DatabaseManager:
             return [{"group_id": row[0], "name": row[1], "slug": row[2]} for row in results]
 
     def add_page_to_group(self, page_id: int, group_id: int) -> None:
-        """Link a tracked page to a product group."""
         with self.get_connection() as conn:
             try:
                 sql = """
@@ -656,7 +644,6 @@ class DatabaseManager:
                     raise
 
     def remove_page_from_group(self, page_id: int, group_id: int) -> None:
-        """Remove a page from a product group."""
         with self.get_connection() as conn:
             sql = "DELETE FROM page_groups WHERE page_id = ? AND group_id = ?"
             conn.execute(sql, [page_id, group_id])
@@ -740,7 +727,6 @@ class DatabaseManager:
             return [p for p in pages if p is not None]
 
     def get_group_comparison(self, group_name: str) -> dict[str, Any]:
-        """Compare prices across providers in a group."""
         pages = self.get_group_pages(group_name)
 
         if not pages:
@@ -856,18 +842,15 @@ class DatabaseManager:
             ]
 
     def get_cheapest_in_group(self, group_name: str) -> dict[str, Any] | None:
-        """Find the provider with the lowest current price in a group."""
         comparison = self.get_group_comparison(group_name)
         return comparison.get("cheapest_provider")
 
     def get_group_statistics(self, group_name: str) -> dict[str, Any] | None:
-        """Get statistical summary for a group."""
         comparison = self.get_group_comparison(group_name)
         stats = comparison.get("statistics")
         return stats if isinstance(stats, dict) else None
 
     def get_basket_comparison(self, group_names: list[str]) -> dict[str, Any]:
-        """Compare total basket costs across multiple product groups."""
         logger.debug(f"Getting basket comparison for {len(group_names)} groups: {group_names}")
 
         with self.get_connection() as conn:
@@ -967,7 +950,6 @@ class DatabaseManager:
         products: list[dict],
         requested_groups: list[str],
     ) -> dict[str, Any]:
-        """Calculate aggregate statistics for basket comparison."""
         if not providers:
             return {
                 "total_groups": 0,
@@ -1012,14 +994,12 @@ class DatabaseManager:
     # ==================== Utility Methods ====================
 
     def execute_query(self, sql: str, params: list | None = None) -> list:
-        """Execute a custom SQL query."""
         with self.get_connection() as conn:
             result = conn.execute(sql, params or [])
             return result.fetchall()
 
     @staticmethod
     def _prepare_snapshot_data(data: dict[str, Any]) -> dict[str, Any]:
-        """Prepare snapshot data for insertion (handle JSON fields)."""
         prepared: dict[str, Any] = {}
 
         json_fields = [
@@ -1046,7 +1026,6 @@ class DatabaseManager:
 
     @staticmethod
     def _row_to_snapshot_dict(row: tuple) -> dict[str, Any] | None:
-        """Convert database row to snapshot dictionary."""
         if not row:
             return None
 
@@ -1087,7 +1066,6 @@ class DatabaseManager:
 
     @staticmethod
     def _row_to_tracked_page_dict(row: tuple) -> dict[str, Any] | None:
-        """Convert database row to tracked page dictionary."""
         if not row:
             return None
 
@@ -1102,7 +1080,6 @@ class DatabaseManager:
 
     @staticmethod
     def _row_to_group_dict(row: tuple, include_page_count: bool = False) -> dict[str, Any] | None:
-        """Convert database row to product group dictionary."""
         if not row:
             return None
 
@@ -1119,7 +1096,6 @@ class DatabaseManager:
 
     @staticmethod
     def _row_to_group_page_dict(row: tuple) -> dict[str, Any] | None:
-        """Convert database row from v_latest_group_prices view to dictionary."""
         if not row:
             return None
 

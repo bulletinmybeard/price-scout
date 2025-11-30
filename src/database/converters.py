@@ -9,8 +9,6 @@ logger = get_logger(__name__)
 
 
 def base_product_to_snapshot(base_product: BaseProduct, provider: str, url: str) -> dict[str, Any]:
-    """Convert BaseProduct to page snapshot dictionary for DuckDB."""
-
     snapshot = {
         "url": url,
         "provider": provider,

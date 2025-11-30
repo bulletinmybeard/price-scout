@@ -25,7 +25,6 @@ class MigrationRunner:
             self.migrations_dir.mkdir(parents=True, exist_ok=True)
 
     def _get_default_migrations_dir(self) -> Path:
-        """Get default migrations directory path."""
         # Try to find project root (where pyproject.toml is)
         current = Path(__file__).parent
         while current != current.parent:
@@ -37,7 +36,6 @@ class MigrationRunner:
 
     @staticmethod
     def _ensure_migrations_table(conn):
-        """Ensure schema_migrations table exists."""
         conn.execute("""
             CREATE TABLE IF NOT EXISTS schema_migrations (
                 version VARCHAR(4) PRIMARY KEY,
@@ -49,7 +47,6 @@ class MigrationRunner:
         """)
 
     def get_applied_migrations(self, conn) -> dict[str, dict[str, Any]]:
-        """Get list of already-applied migrations."""
         self._ensure_migrations_table(conn)
 
         result = conn.execute("""
@@ -108,11 +105,9 @@ class MigrationRunner:
         return migration_files
 
     def _calculate_checksum(self, file_path: Path) -> str:
-        """Calculate SHA256 checksum of migration file."""
         return hashlib.sha256(file_path.read_bytes()).hexdigest()
 
     def _load_migration_module(self, file_path: Path):
-        """Dynamically load migration module."""
         spec = importlib.util.spec_from_file_location(file_path.stem, file_path)
         if not spec or not spec.loader:
             raise ImportError(f"Could not load migration: {file_path}")
@@ -143,8 +138,6 @@ class MigrationRunner:
             )
 
     def run_migrations(self, dry_run: bool = False) -> dict[str, Any]:
-        """Run pending migrations."""
-
         db = DatabaseManager(self.db_url, read_only=False)
 
         results: dict[str, Any] = {
@@ -272,8 +265,6 @@ class MigrationRunner:
         return results
 
     def rollback_multiple(self, count: int = 1) -> dict[str, Any]:
-        """Rollback last N applied migrations."""
-
         db = DatabaseManager(self.db_url, read_only=False)
 
         result: dict[str, Any] = {
@@ -356,14 +347,11 @@ class MigrationRunner:
         return result
 
     def rollback_last(self) -> dict[str, Any]:
-        """Rollback the last applied migration."""
         result = self.rollback_multiple(count=1)
 
         return {"success": result["success"], "message": result["message"]}
 
     def get_status(self) -> dict[str, Any]:
-        """Get migration status."""
-
         db = DatabaseManager(self.db_url, read_only=False)
 
         _status: dict[str, Any] = {

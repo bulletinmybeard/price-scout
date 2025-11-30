@@ -12,7 +12,6 @@ logger = get_logger(__name__)
 def handle_fuzzy_group_matching(
     group_name: str | None, db_manager: DatabaseManager, json_output: bool = False
 ) -> str | None:
-    """Handle fuzzy matching for group names with user interaction."""
     if not group_name:
         return None
 
@@ -49,7 +48,6 @@ def handle_fuzzy_group_matching(
 def auto_associate_with_groups(
     url: str, db_manager: DatabaseManager, config_path: str | None = None
 ) -> list[str]:
-    """Automatically associate a tracked URL with product groups from config."""
     try:
         config = load_typed_config(config_path)
         product_groups = config.product_groups
@@ -96,7 +94,6 @@ def auto_associate_with_groups(
 def associate_tracked_page_with_group(
     url: str, group_name: str, db_manager: DatabaseManager
 ) -> bool:
-    """Create group if needed and associate tracked page with it."""
     try:
         group_id = db_manager.create_group(name=group_name)
 

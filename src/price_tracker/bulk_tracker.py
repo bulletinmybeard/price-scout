@@ -46,7 +46,6 @@ class BulkTracker:
         cached: bool = False,
         json_output: bool = False,
     ):
-        """Initialize bulk tracker."""
         self.tracker = tracker
         self.factory = factory
         self.db_manager = db_manager
@@ -57,7 +56,6 @@ class BulkTracker:
     def track_multiple_urls(
         self, urls: list[str], group_name: str | None = None
     ) -> list[tuple[str, str, Any]]:
-        """Track multiple URLs in parallel with progress display."""
         results: list[tuple[str, str, Any]] = []
         urls_to_scrape = []
 
@@ -101,7 +99,6 @@ class BulkTracker:
     def _track_parallel_json_mode(
         self, urls_to_scrape: list[str], group_name: str | None, results: list
     ) -> list[tuple[str, str, Any]]:
-        """Track URLs in parallel without progress bars (JSON mode)."""
         max_workers = max(1, min(len(urls_to_scrape), 3))
         db_url = get_db_url()
 
@@ -133,7 +130,6 @@ class BulkTracker:
         group_name: str | None,
         results: list,
     ) -> list[tuple[str, str, Any]]:
-        """Track URLs in parallel with Rich progress bars (table mode)."""
         console = get_console()
         console.print(
             f"\nTracking {total_products} product(s) across {total_providers} provider(s)\n"
@@ -306,7 +302,6 @@ class BulkTracker:
 
     @staticmethod
     def _display_issues_summary(failures_by_provider: dict, failure_counts: dict) -> None:
-        """Display summary of failures grouped by provider."""
         total_failures = sum(failure_counts.values())
         if total_failures == 0:
             return

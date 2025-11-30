@@ -18,7 +18,6 @@ async def retry_with_backoff(
     *args: Any,
     **kwargs: Any,
 ) -> Any:
-    """Execute an async function with exponential backoff retry logic."""
     last_exception: Exception | None = None
 
     for attempt in range(max_retries + 1):
@@ -50,5 +49,4 @@ def should_retry_on_result(
     result: Any,
     retry_condition: Callable[[Any], bool],
 ) -> bool:
-    """Check if a result should trigger a retry based on custom condition."""
     return retry_condition(result)

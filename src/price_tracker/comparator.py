@@ -11,33 +11,27 @@ class PriceComparator:
     """Compares product prices across different stores and provides analysis."""
 
     def __init__(self, db_manager: DatabaseManager | None = None):
-        """Initialize the PriceComparator."""
         self.db_manager = db_manager or DatabaseManager()
         logger.debug("PriceComparator initialized with DuckDB backend")
 
     def compare_group(self, group_name: str) -> dict[str, Any]:
-        """Compare prices for all providers in a product group."""
         logger.debug(f"Comparing prices for group '{group_name}'")
         return self.db_manager.get_group_comparison(group_name)
 
     def find_cheapest_in_group(self, group_name: str) -> dict[str, Any] | None:
-        """Find the provider with the lowest price in a group."""
         logger.debug(f"Finding cheapest provider in group '{group_name}'")
         return self.db_manager.get_cheapest_in_group(group_name)
 
     def get_group_price_history(self, group_name: str, days: int = 30) -> list[dict[str, Any]]:
-        """Get price history for all providers in a group."""
         logger.debug(f"Getting price history for group '{group_name}' ({days} days)")
         return self.db_manager.get_group_price_history(group_name, days)
 
     def get_group_statistics(self, group_name: str) -> dict[str, Any]:
-        """Get statistical summary for a product group."""
         logger.debug(f"Getting statistics for group '{group_name}'")
         stats = self.db_manager.get_group_statistics(group_name)
         return stats or {}
 
     def get_all_groups_summary(self) -> list[dict[str, Any]]:
-        """Get a summary of all product groups with their best prices."""
         logger.debug("Getting summary for all product groups")
         groups = self.db_manager.get_all_groups()
 
@@ -66,7 +60,6 @@ class PriceComparator:
         limit: int = 10,
         discount_threshold: float = 0.15,
     ) -> list[dict[str, Any]]:
-        """Find the best deals across all tracked products."""
         logger.debug(f"Finding best deals (discount >= {discount_threshold * 100}%)")
 
         deals = []
@@ -94,7 +87,6 @@ class PriceComparator:
         return deals[:limit]
 
     def get_price_history(self, url: str, days: int = 30) -> list[dict[str, Any]]:
-        """Get price history for a specific product URL."""
         logger.debug(f"Getting price history for {url} ({days} days)")
         return self.db_manager.get_snapshot_history(url, days)
 

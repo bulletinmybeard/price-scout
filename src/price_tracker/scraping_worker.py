@@ -14,7 +14,6 @@ logger = get_logger(__name__)
 
 
 def scrape_single_url(url, tracker, factory, check, db_url, group_name=None):
-    """Scrape a single URL and return result tuple with timing."""
     start_time = time.time()
 
     try:

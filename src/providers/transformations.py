@@ -25,7 +25,6 @@ class Transformations:
 
     @staticmethod
     def split_string(value: str, delimiter: str = ",", strip: bool = True) -> list[str]:
-        """Split string into list."""
         if not value:
             return []
 
@@ -118,7 +117,6 @@ class Transformations:
 
     @staticmethod
     def _apply_basic_cleaning(price_str: str) -> str:
-        """Apply basic price cleaning (common symbols and whitespace)."""
         price_str = " ".join(price_str.split())
 
         for symbol in ["€", "$", "£", "USD", "EUR", "GBP", "\xa0", "\u00a0"]:
@@ -128,8 +126,6 @@ class Transformations:
 
     @staticmethod
     def _apply_price_cleaning_rules(price_str: str, config: dict[str, Any]) -> str:
-        """Apply config-driven price cleaning rules."""
-
         price_str = " ".join(price_str.split())
 
         prefixes = config.get("remove_prefixes", [])
@@ -156,7 +152,6 @@ class Transformations:
 
     @staticmethod
     def _parse_decimal_format(price_str: str, decimal_format: str = "auto") -> float:
-        """Parse decimal format from cleaned price string."""
         price_str = price_str.strip()
 
         if decimal_format == "auto":
@@ -194,8 +189,6 @@ class Transformations:
 
     @staticmethod
     def apply_transformation(value: Any, transformation: dict[str, Any] | None = None) -> Any:
-        """Apply a transformation based on config rules."""
-
         if not transformation:
             return value
 

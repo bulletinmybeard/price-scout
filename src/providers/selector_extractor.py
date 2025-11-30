@@ -76,7 +76,6 @@ class SelectorExtractor:
     """Extract data from web pages using CSS selectors and XPath expressions."""
 
     def __init__(self):
-        """Initialize the selector extractor."""
         pass
 
     async def extract_field(
@@ -108,7 +107,6 @@ class SelectorExtractor:
         page: Page,
         config: SelectorConfig,
     ) -> Any:
-        """Extract data using a single selector configuration."""
         if config.wait_for:
             try:
                 await self._wait_for_selector(page, config)
@@ -173,7 +171,6 @@ class SelectorExtractor:
 
     @staticmethod
     async def _wait_for_selector(page: Page, config: SelectorConfig) -> None:
-        """Wait for element to appear on page."""
         if config.selector_type == "css":
             await page.wait_for_selector(config.selector, timeout=config.wait_timeout)
         elif config.selector_type == "xpath":
@@ -183,7 +180,6 @@ class SelectorExtractor:
 
     @staticmethod
     def _apply_regex_processing(value: str, config: SelectorConfig) -> str:
-        """Apply regex extraction or replacement to extracted value."""
         if config.regex_extract:
             try:
                 match = re.search(config.regex_extract, value)
@@ -211,7 +207,6 @@ class SelectorExtractor:
 
     @staticmethod
     async def _find_element(page: Page, config: SelectorConfig):
-        """Find a single element using CSS or XPath selector."""
         if config.selector_type == "css":
             return await page.query_selector(config.selector)
         elif config.selector_type == "xpath":
@@ -222,7 +217,6 @@ class SelectorExtractor:
 
     @staticmethod
     async def _find_elements(page: Page, config: SelectorConfig):
-        """Find multiple elements using CSS or XPath selector."""
         if config.selector_type == "css":
             return await page.query_selector_all(config.selector)
         elif config.selector_type == "xpath":
@@ -235,7 +229,6 @@ class SelectorExtractor:
         page: Page,
         field_selectors: dict[str, list[SelectorConfig]],
     ) -> dict[str, Any]:
-        """Extract multiple fields from a page using configured selectors."""
         results: dict[str, Any] = {}
 
         for field_name, selectors in field_selectors.items():
@@ -247,7 +240,6 @@ class SelectorExtractor:
 
     @staticmethod
     def parse_selector_config(config_data: dict[str, Any] | str) -> SelectorConfig:
-        """Parse selector configuration from YAML/dict format."""
         if isinstance(config_data, str):
             # Simple string = CSS selector extracting text
             return SelectorConfig(selector=config_data, selector_type="css")
@@ -318,5 +310,4 @@ class SelectorExtractor:
 
 
 def create_extractor() -> SelectorExtractor:
-    """Factory function to create a new SelectorExtractor instance."""
     return SelectorExtractor()

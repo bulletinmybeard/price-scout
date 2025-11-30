@@ -147,7 +147,6 @@ def refresh(ctx: click.Context, providers, group, url):
 
 
 def _refresh_single_url(url: str, provider_name: str, tracker, db_manager) -> bool:
-    """Refresh a single URL and return success status."""
     try:
         product, _db_result = tracker.track_product_url(url, provider_name, track_to_db=True)
         return product is not None

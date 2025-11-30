@@ -24,7 +24,6 @@ class ConfigurableProvider(AsyncBaseProvider):
     """Generic provider that loads configuration from Pydantic ProviderConfig model."""
 
     def __init__(self, config: ProviderConfig, headless: bool = True):
-        """Initialize provider with Pydantic ProviderConfig model."""
         super().__init__(headless=headless)
         self.provider_config = config
         self._name = config.name
@@ -154,7 +153,6 @@ class ConfigurableProvider(AsyncBaseProvider):
     async def _extract_from_json_ld(
         self, html_content: str, url: str, page: Page
     ) -> BaseProduct | None:
-        """Extract product from JSON-LD structured data."""
         json_ld_config = self.provider_config.extraction.get("json_ld", {})
 
         use_pyld = json_ld_config.get("use_pyld", False)
@@ -442,8 +440,6 @@ class ConfigurableProvider(AsyncBaseProvider):
     async def _extract_from_selectors(
         self, html_content: str, url: str, page: Page
     ) -> BaseProduct | None:
-        """Extract product using CSS/XPath selectors."""
-
         extractor = SelectorExtractor()
 
         field_selectors = extractor.parse_field_selectors(self.provider_config.extraction)
@@ -632,7 +628,6 @@ class ConfigurableProvider(AsyncBaseProvider):
 
     @staticmethod
     def _apply_field_transformation(value: Any, transformation: Any) -> Any:
-        """Apply transformation to a field value."""
         if not transformation:
             return value
 

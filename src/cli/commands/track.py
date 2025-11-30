@@ -32,7 +32,6 @@ logger = get_logger(__name__)
 
 
 def _handle_delete_products(urls: list[str], skip_confirmation: bool, json_output: bool):
-    """Handle deletion of tracked products."""
     console = get_console()
     db_url = get_db_url()
     db = DatabaseManager(db_url, read_only=False)
