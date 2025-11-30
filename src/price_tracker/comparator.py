@@ -97,3 +97,27 @@ class PriceComparator:
         """Get price history for a specific product URL."""
         logger.debug(f"Getting price history for {url} ({days} days)")
         return self.db_manager.get_snapshot_history(url, days)
+
+    def compare_baskets(self, group_names: list[str]) -> dict[str, Any]:
+        """
+        Compare total shopping basket costs across multiple product groups.
+
+        Raises:
+            ValueError: If group_names is empty or contains fewer than 1 group
+        """
+        if not group_names or len(group_names) < 1:
+            raise ValueError("At least 1 product group required for basket comparison")
+
+        logger.debug(f"Comparing basket across {len(group_names)} groups: {group_names}")
+
+        result = self.db_manager.get_basket_comparison(group_names=group_names)
+
+        if result["missing_groups"]:
+            logger.warning(
+                f"Groups not found or have no data: {', '.join(result['missing_groups'])}"
+            )
+
+        if not result["providers"]:
+            logger.warning("No provider data found for basket comparison")
+
+        return result

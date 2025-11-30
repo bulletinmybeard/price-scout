@@ -1,4 +1,3 @@
-import logging
 from typing import cast
 
 from chalkbox.components.padding import Padding
@@ -20,12 +19,7 @@ console = get_console()
 @click.pass_context
 def groups(ctx: click.Context):
     """Manage product groups for price comparison."""
-    debug = ctx.obj.get("debug", False)
-    if not debug:
-        # Production mode: only show warnings and errors
-        logging.getLogger().setLevel(logging.WARNING)
-        for logger_name in ["src", "config", "playwright", "urllib3", "asyncio"]:
-            logging.getLogger(logger_name).setLevel(logging.WARNING)
+    pass
 
 
 @groups.command("list")

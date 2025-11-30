@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "price-scout"
-version = "0.8.5b1"
+version = "1.2.0"
 description = "Self-hosted price tracker with local data storage"
 authors = [
     "Robin Schulz <bulletinmybeard@gmail.com>"
@@ -124,6 +124,8 @@ ignore = [
 "tests/*" = ["S101", "S603", "S607"]     # Allow assert and subprocess in tests
 "examples/*" = ["S311", "S603", "S607"]  # Allow pseudo-random generators, subprocess in examples
 "scripts/*" = ["S603", "S607"]           # Allow subprocess in scripts
+"src/database/db_manager.py" = ["S608"]  # Safe parameterized queries with placeholders
+"src/database/migration_runner.py" = ["S608"]  # Safe parameterized queries with integer params
 
 [tool.ruff.lint.isort]
 combine-as-imports = true

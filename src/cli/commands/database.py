@@ -1,4 +1,3 @@
-import logging
 from pathlib import Path
 from typing import cast
 
@@ -13,6 +12,7 @@ from src.cli.chalkbox_helpers import (
 )
 from src.cli.helpers import get_console, get_db_url
 from src.database.db_manager import DatabaseManager
+from src.database.migration_runner import MigrationRunner
 
 console = get_console()
 
@@ -60,13 +60,7 @@ def _cleanup_data_files(db_url: str) -> None:
 @click.pass_context
 def db(ctx: click.Context):
     """Database management commands for DuckDB database: reset, info, backup, etc."""
-    debug = ctx.obj.get("debug", False)
-
-    if not debug:
-        # Only show warnings and errors
-        logging.getLogger().setLevel(logging.WARNING)
-        for logger_name in ["src", "config", "playwright", "urllib3", "asyncio"]:
-            logging.getLogger(logger_name).setLevel(logging.WARNING)
+    pass
 
 
 @db.command()
@@ -258,6 +252,201 @@ def info():
 
     except Exception as e:
         show_error("Error getting database info", details=str(e))
+        raise click.Abort() from e
+
+
+@db.group()
+def migrate():
+    """Database migration commands."""
+    pass
+
+
+@migrate.command(name="apply")
+@click.option("--dry-run", is_flag=True, help="Show what would be applied without executing")
+def migrate_apply(dry_run: bool):
+    """Apply pending database migrations."""
+
+    db_url = get_db_url()
+
+    try:
+        console.print()
+        if dry_run:
+            show_info("DRY RUN", details="Showing what would be applied (no changes will be made)")
+            console.print()
+
+        runner = MigrationRunner(db_url)
+        results = runner.run_migrations(dry_run=dry_run)
+
+        console.print()
+        if results["applied"]:
+            console.print(f"[green]✓ Applied {len(results['applied'])} migration(s):[/green]")
+            for migration in results["applied"]:
+                version = migration["version"]
+                name = migration["name"]
+                if migration.get("dry_run"):
+                    console.print(f"  [dim]• {version}_{name} (dry run)[/dim]")
+                else:
+                    time_ms = migration.get("execution_time_ms", 0)
+                    console.print(f"  [dim]• {version}_{name} ({time_ms}ms)[/dim]")
+            console.print()
+
+        if results["skipped"]:
+            console.print(
+                f"[dim]Skipped {len(results['skipped'])} already-applied migration(s)[/dim]"
+            )
+            console.print()
+
+        if results["failed"]:
+            console.print(f"[red]✗ Failed {len(results['failed'])} migration(s):[/red]")
+            for migration in results["failed"]:
+                if "error" in migration:
+                    console.print(f"  [red]• {migration.get('error', 'Unknown error')}[/red]")
+                else:
+                    version = migration.get("version", "unknown")
+                    name = migration.get("name", "unknown")
+                    error = migration.get("error", "Unknown error")
+                    console.print(f"  [red]• {version}_{name}: {error}[/red]")
+            console.print()
+            raise click.Abort()
+
+        if not results["applied"] and not results["failed"]:
+            show_info("No pending migrations", details="All migrations are up to date")
+            console.print()
+
+    except click.Abort:
+        raise
+    except Exception as e:
+        show_error("Migration failed", details=str(e))
+        raise click.Abort() from e
+
+
+@migrate.command()
+def status():
+    """Show migration status."""
+
+    db_url = get_db_url()
+
+    try:
+        runner = MigrationRunner(db_url)
+        status_info = runner.get_status()
+
+        console.print()
+        console.print("[bold]Migration Status[/bold]")
+        console.print()
+
+        # Applied migrations
+        console.print(f"[green]Applied: {status_info['applied_count']} migration(s)[/green]")
+        if status_info["applied"]:
+            for migration in status_info["applied"]:
+                version = migration["version"]
+                name = migration["name"]
+                applied_at = migration.get("applied_at", "Unknown")
+                console.print(f"  [dim]• {version}_{name} (applied: {applied_at})[/dim]")
+        console.print()
+
+        if status_info["pending_count"] > 0:
+            console.print(f"[yellow]Pending: {status_info['pending_count']} migration(s)[/yellow]")
+            for migration in status_info["pending"]:
+                version = migration["version"]
+                name = migration["name"]
+                console.print(f"  [dim]• {version}_{name}[/dim]")
+            console.print()
+            console.print(
+                "[yellow]Run 'scout db migrate apply' to apply pending migrations[/yellow]"
+            )
+        else:
+            console.print("[green]✓ All migrations up to date[/green]")
+
+        console.print()
+
+    except Exception as e:
+        show_error("Failed to get migration status", details=str(e))
+        raise click.Abort() from e
+
+
+@migrate.command()
+@click.argument("count", type=int, default=1, required=False)
+def rollback(count: int):
+    """Rollback the last N applied migration(s)."""
+
+    db_url = get_db_url()
+
+    try:
+        console.print()
+
+        runner = MigrationRunner(db_url)
+        status_info = runner.get_status()
+
+        if status_info["applied_count"] == 0:
+            show_info("No migrations to rollback", details="Database is empty")
+            console.print()
+            return
+
+        migrations_to_rollback = status_info["applied"][-count:]  # Last N migrations
+        actual_count = min(count, len(status_info["applied"]))
+
+        if actual_count < count:
+            show_warning(
+                f"Only {actual_count} migration(s) available",
+                details=f"You requested {count}, but only {actual_count} exist",
+            )
+
+        console.print("[yellow]The following migration(s) will be rolled back:[/yellow]")
+        for migration in reversed(migrations_to_rollback):  # Show newest first
+            version = migration["version"]
+            name = migration["name"]
+            console.print(f"  [dim]• {version}_{name}[/dim]")
+        console.print()
+
+        try:
+            user_input = (
+                input(f"Are you sure you want to rollback {actual_count} migration(s)? [y/N]: ")
+                .strip()
+                .lower()
+            )
+            if user_input not in ["y", "yes"]:
+                console.print("[dim]Rollback cancelled.[/dim]")
+                console.print()
+                return
+        except (EOFError, KeyboardInterrupt):
+            console.print("\n[dim]Rollback cancelled.[/dim]")
+            console.print()
+            return
+
+        show_warning(
+            "Rolling back migrations",
+            details="This will undo database changes. Make sure you have a backup!",
+        )
+        console.print()
+
+        result = runner.rollback_multiple(count)
+
+        console.print()
+        if result["rolled_back"]:
+            console.print(
+                f"[green]✓ Successfully rolled back {len(result['rolled_back'])} migration(s):[/green]"
+            )
+            for migration_id in result["rolled_back"]:
+                console.print(f"  [dim]• {migration_id}[/dim]")
+
+        if result["failed"]:
+            console.print()
+            console.print(f"[red]✗ Failed to rollback {len(result['failed'])} migration(s):[/red]")
+            for failure in result["failed"]:
+                migration = failure.get("migration", "unknown")
+                error = failure.get("error", "unknown error")
+                console.print(f"  [red]• {migration}: {error}[/red]")
+
+        if not result["success"]:
+            console.print()
+            raise click.Abort()
+
+        console.print()
+
+    except click.Abort:
+        raise
+    except Exception as e:
+        show_error("Rollback failed", details=str(e))
         raise click.Abort() from e
 
 

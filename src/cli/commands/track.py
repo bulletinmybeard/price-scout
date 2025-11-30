@@ -2,7 +2,7 @@ from contextlib import redirect_stderr
 from io import StringIO
 import json
 import sys
-from typing import Any, Literal, cast
+from typing import Any, cast
 
 from chalkbox.logging.bridge import get_logger
 import click
@@ -15,7 +15,6 @@ from src.cli.formatters import (
     output_multi_json_response,
 )
 from src.cli.helpers import detect_provider_from_url, get_console, get_db_url
-from src.cli.logging_config import configure_logging_for_output_mode
 from src.config.config_loader import load_typed_config
 from src.database.db_manager import DatabaseManager
 from src.price_tracker.bulk_tracker import BulkTracker
@@ -30,6 +29,164 @@ from src.providers.base_product import BaseProduct
 from src.utils.datetime_utils import now_in_configured_tz
 
 logger = get_logger(__name__)
+
+
+def _handle_delete_products(urls: list[str], skip_confirmation: bool, json_output: bool):
+    """Handle deletion of tracked products."""
+    console = get_console()
+    db_url = get_db_url()
+    db = DatabaseManager(db_url, read_only=False)
+
+    deletion_results: list[dict[str, Any]] = []
+    all_orphaned_groups = set()
+
+    for url in urls:
+        try:
+            page = db.get_tracked_page(url)
+            if not page:
+                deletion_results.append(
+                    {"url": url, "status": "error", "error": "URL not found in tracked pages"}
+                )
+                continue
+
+            with db.get_connection() as conn:
+                snapshot_count_result = conn.execute(
+                    "SELECT COUNT(*) FROM page_snapshots WHERE url = ?", [url]
+                ).fetchone()
+                snapshot_count = snapshot_count_result[0] if snapshot_count_result else 0
+
+            deletion_results.append(
+                {
+                    "url": url,
+                    "status": "pending",
+                    "page_id": page["id"],
+                    "provider": page["provider"],
+                    "snapshot_count": snapshot_count,
+                }
+            )
+
+        except Exception as e:
+            deletion_results.append({"url": url, "status": "error", "error": str(e)})
+
+    valid_deletions = [r for r in deletion_results if r["status"] == "pending"]
+
+    if not valid_deletions:
+        if json_output:
+            click.echo(
+                json.dumps(
+                    {
+                        "status": "error",
+                        "message": "No valid URLs to delete",
+                        "results": deletion_results,
+                    },
+                    indent=2,
+                )
+            )
+        else:
+            show_error("No valid URLs to delete", details="Check that URLs are tracked")
+        return
+
+    if not json_output:
+        console.print()
+        console.print(f"[yellow]Deleting {len(valid_deletions)} tracked product(s):[/yellow]")
+        for result in valid_deletions:
+            console.print(f"\n  [bold]{result['url'][:80]}...[/bold]")
+            console.print(f"  Provider: {result['provider']}")
+            console.print(f"  Price history snapshots: {result['snapshot_count']}")
+        console.print()
+
+    if not skip_confirmation:
+        console.print("[red]This will permanently delete ALL data for these products:[/red]")
+        console.print("  - All price history snapshots")
+        console.print("  - Tracked page records")
+        console.print("  - Product group associations")
+        console.print()
+
+        try:
+            user_input = (
+                input(f"Are you sure you want to delete {len(valid_deletions)} product(s)? [y/N]: ")
+                .strip()
+                .lower()
+            )
+            if user_input not in ["y", "yes"]:
+                if json_output:
+                    click.echo(
+                        json.dumps(
+                            {"status": "cancelled", "message": "Deletion cancelled by user"},
+                            indent=2,
+                        )
+                    )
+                else:
+                    console.print("[dim]Deletion cancelled.[/dim]")
+                    console.print()
+                return
+        except (EOFError, KeyboardInterrupt):
+            if json_output:
+                click.echo(
+                    json.dumps(
+                        {"status": "cancelled", "message": "Deletion cancelled by user"}, indent=2
+                    )
+                )
+            else:
+                console.print("\n[dim]Deletion cancelled.[/dim]")
+                console.print()
+            return
+
+    for result in valid_deletions:
+        try:
+            deletion_summary = db.delete_tracked_page(result["url"])
+            result["status"] = "deleted"
+            result["snapshots_deleted"] = deletion_summary["snapshots_deleted"]
+            result["group_associations_removed"] = deletion_summary["group_associations_removed"]
+            result["orphaned_groups"] = deletion_summary["orphaned_groups"]
+
+            all_orphaned_groups.update(deletion_summary["orphaned_groups"])
+
+            if not json_output:
+                console.print(f"[green]✓ Deleted: {result['url'][:80]}...[/green]")
+
+        except Exception as e:
+            result["status"] = "error"
+            result["error"] = str(e)
+            if not json_output:
+                console.print(f"[red]✗ Failed: {result['url'][:80]}...[/red]")
+                console.print(f"[red]  Error: {e!s}[/red]")
+
+    if all_orphaned_groups and not skip_confirmation and not json_output:
+        console.print()
+        console.print(
+            f"[yellow]Warning: {len(all_orphaned_groups)} product group(s) now empty:[/yellow]"
+        )
+        for group_name in sorted(all_orphaned_groups):
+            console.print(f"  • {group_name}")
+        console.print()
+        console.print(
+            "[dim]Empty groups are kept by default. You can manually delete them via:[/dim]"
+        )
+        console.print("[dim]  scout groups list  # View all groups[/dim]")
+        console.print()
+
+    if json_output:
+        click.echo(
+            json.dumps(
+                {
+                    "status": "success",
+                    "deleted_count": len([r for r in deletion_results if r["status"] == "deleted"]),
+                    "failed_count": len([r for r in deletion_results if r["status"] == "error"]),
+                    "orphaned_groups": list(all_orphaned_groups),
+                    "results": deletion_results,
+                },
+                indent=2,
+            )
+        )
+    else:
+        console.print()
+        deleted = len([r for r in deletion_results if r["status"] == "deleted"])
+        failed = len([r for r in deletion_results if r["status"] == "error"])
+        console.print(f"[green]✓ Successfully deleted: {deleted} product(s)[/green]")
+        if failed > 0:
+            console.print(f"[red]✗ Failed: {failed} product(s)[/red]")
+        console.print()
 
 
 @click.command()
@@ -59,6 +216,17 @@ logger = get_logger(__name__)
     default=None,
     help="Assign tracked URL(s) to a product group (creates group if doesn't exist)",
 )
+@click.option(
+    "--delete",
+    is_flag=True,
+    help="Delete tracked product(s) and ALL related data (snapshots, group associations)",
+)
+@click.option(
+    "--yes",
+    "-y",
+    is_flag=True,
+    help="Skip confirmation prompts (for delete operations)",
+)
 @click.pass_context
 def track(
     ctx,
@@ -69,6 +237,8 @@ def track(
     full: bool,
     headed: bool | None,
     group: str | None,
+    delete: bool,
+    yes: bool,
 ):
     """
     Track one or more products from URLs and compare prices.
@@ -94,6 +264,9 @@ def track(
     """
     unique_urls = list(dict.fromkeys(url))
 
+    if delete:
+        return _handle_delete_products(unique_urls, yes, json_output)
+
     # Load max_parallel_urls from config (default: 25)
     config = load_typed_config()
     max_unique_urls = config.cli.max_parallel_urls
@@ -111,16 +284,7 @@ def track(
         raise click.Abort()
 
     # Configure logging based on output mode and debug flag
-    debug = ctx.obj.get("debug", False)
-
-    mode: Literal["debug", "json", "table"]
-    if debug:
-        mode = "debug"
-    elif json_output:
-        mode = "json"
-    else:
-        mode = "table"
-    configure_logging_for_output_mode(mode, debug)
+    ctx.obj.get("debug", False)
 
     # In JSON mode, suppress stderr to hide event loop cleanup warnings
     stderr_suppressor = StringIO() if json_output else sys.stderr
@@ -306,9 +470,16 @@ def track(
                         if existing_page:
                             db_manager.update_last_checked(tracked_url, product.current_price)
                         else:
+                            extraction_config = (
+                                _provider_config.get("extraction", {}) if _provider_config else {}
+                            )
+                            json_ld_config = extraction_config.get("json_ld", {})
+                            offer_strategy = json_ld_config.get("offer_selection_strategy", "first")
+
                             page_data = {
                                 "url": tracked_url,
                                 "provider": provider_name,
+                                "offer_selection_strategy": offer_strategy,
                                 "enabled": True,
                                 "last_checked": now_in_configured_tz(),
                                 "last_price": product.current_price,

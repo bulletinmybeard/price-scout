@@ -46,6 +46,7 @@ class GroupSync:
                     page_data = {
                         "url": url,
                         "provider": provider_name,
+                        "offer_selection_strategy": "first",
                         "enabled": True,
                     }
                     page_id = self.db_manager.add_tracked_page(page_data)
@@ -132,6 +133,7 @@ def sync_groups_from_config(
                     page_data = {
                         "url": url,
                         "provider": provider_name,
+                        "offer_selection_strategy": "first",
                         "enabled": True,
                         "last_checked": None,
                         "last_price": None,
@@ -207,6 +209,7 @@ def sync_single_group(
             page_data = {
                 "url": url,
                 "provider": provider_name,
+                "offer_selection_strategy": "first",
                 "enabled": True,
             }
 

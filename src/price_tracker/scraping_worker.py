@@ -1,4 +1,3 @@
-import logging
 import time
 
 from chalkbox.logging.bridge import get_logger
@@ -20,8 +19,8 @@ def scrape_single_url(url, tracker, factory, check, db_url, group_name=None):
 
     try:
         provider_name, _provider_config = detect_provider_from_url(url, factory)
-        logging.debug(f"Provider name: {provider_name}")
-        logging.debug(f"Provider config: {_provider_config}")
+        logger.debug(f"Provider name: {provider_name}")
+        logger.debug(f"Provider config: {_provider_config}")
 
         if not provider_name:
             elapsed = time.time() - start_time
@@ -61,6 +60,7 @@ def scrape_single_url(url, tracker, factory, check, db_url, group_name=None):
                         page_data = {
                             "url": tracked_url,
                             "provider": provider_name,
+                            "offer_selection_strategy": "first",
                             "enabled": True,
                             "last_checked": now_in_configured_tz(),
                             "last_price": product.current_price,

@@ -5,6 +5,17 @@ CREATE_SEQUENCES = [
     "CREATE SEQUENCE IF NOT EXISTS seq_product_groups_id START 1;",
 ]
 
+# Schema migrations tracking table (Django/Laravel-style)
+CREATE_SCHEMA_MIGRATIONS_TABLE = """
+CREATE TABLE IF NOT EXISTS schema_migrations (
+    version VARCHAR(4) PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    applied_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    checksum VARCHAR(64),
+    execution_time_ms INTEGER
+);
+"""
+
 CREATE_PAGE_SNAPSHOTS_TABLE = """
 CREATE TABLE IF NOT EXISTS page_snapshots (
     -- Primary Key (auto-increment using sequence)
@@ -75,6 +86,7 @@ CREATE TABLE IF NOT EXISTS tracked_pages (
     id INTEGER PRIMARY KEY DEFAULT nextval('seq_tracked_pages_id'),
     url VARCHAR(500) UNIQUE NOT NULL,
     provider VARCHAR(50) NOT NULL,
+    offer_selection_strategy VARCHAR(50) DEFAULT 'first',
     enabled BOOLEAN DEFAULT TRUE,
     last_checked TIMESTAMP,
     last_price DOUBLE,
@@ -258,6 +270,7 @@ def get_schema_statements() -> list[str]:
     statements: list[str] = []
 
     statements.extend(CREATE_SEQUENCES)
+    statements.append(CREATE_SCHEMA_MIGRATIONS_TABLE)
     statements.append(CREATE_PAGE_SNAPSHOTS_TABLE)
     statements.append(CREATE_TRACKED_PAGES_TABLE)
     statements.append(CREATE_PRODUCT_GROUPS_TABLE)
@@ -337,6 +350,7 @@ PAGE_SNAPSHOT_FIELDS = [
 TRACKED_PAGE_FIELDS = [
     "url",
     "provider",
+    "offer_selection_strategy",
     "enabled",
     "last_checked",
     "last_price",

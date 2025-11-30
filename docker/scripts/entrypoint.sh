@@ -24,6 +24,11 @@ else
 fi
 
 echo ""
+
+# Run database migrations with auto-backup
+/run_migrations.sh || exit 1
+
+echo ""
 echo "Services starting..."
 echo "  - Xvfb (Virtual Display): :99"
 echo "  - DuckDB Web UI: http://localhost:4213"

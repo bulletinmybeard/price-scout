@@ -1,13 +1,13 @@
 import atexit
-import logging
 from pathlib import Path
 import signal
 import sys
 from types import FrameType
 
-from chalkbox.logging.bridge import setup_logging
+from chalkbox.logging.bridge import get_logger, setup_logging
 import click
 
+from src.cli.commands.compare import compare
 from src.cli.commands.database import db
 from src.cli.commands.groups import groups
 from src.cli.commands.refresh import refresh
@@ -16,7 +16,7 @@ from src.config.config_loader import load_typed_config
 
 _shutdown_requested = False
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 def _signal_handler(signum: int, _frame: FrameType | None) -> None:
@@ -69,7 +69,7 @@ def _cleanup_on_exit():
     default=False,
     help="Enable debug logging output (overrides config dev_mode)",
 )
-@click.version_option(version="1.0.0")
+@click.version_option(version="1.2.0")
 @click.pass_context
 def cli(ctx: click.Context, config_file: Path | str, provider_config: str, debug: bool):
     """Price Scout - Modular browser automation toolkit for price monitoring."""
@@ -124,6 +124,7 @@ def cli(ctx: click.Context, config_file: Path | str, provider_config: str, debug
         ctx.exit()
 
 
+cli.add_command(compare)
 cli.add_command(groups)
 cli.add_command(db)
 

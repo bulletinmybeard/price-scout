@@ -68,7 +68,7 @@ class BaseProduct:
     delivery_time: str | None = None  # e.g., "2-3 days"
 
     provider: str | None = None  # Provider name (e.g., "store_a", "store_b")
-    extraction_method: str | None = None  # "json-ld"
+    extraction_method: str | None = None  # "json-ld" or "selectors"
     extracted_at: datetime | None = None  # When data was extracted
     raw_data: dict[str, Any] = field(default_factory=dict)  # Original raw data
 

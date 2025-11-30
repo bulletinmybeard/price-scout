@@ -1,6 +1,6 @@
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from contextlib import redirect_stderr
+from contextlib import redirect_stderr, redirect_stdout
 from io import StringIO
 import sys
 from threading import Lock
@@ -18,7 +18,6 @@ from src.cli.helpers import (
     get_db_url,
     get_display_name_for_url,
 )
-from src.cli.logging_config import suppress_loggers_during_rich_display
 from src.cli.progress_components import CurrentProductColumn
 from src.database.db_manager import DatabaseManager
 from src.price_tracker.scraping_worker import scrape_single_url
@@ -197,12 +196,12 @@ class BulkTracker:
             display_name = get_display_name_for_url(url, self.db_manager)
             url_to_display_name[url] = display_name
 
-        stderr_suppressor = StringIO() if self.json_output else sys.stderr
+        output_suppressor = StringIO() if self.json_output else sys.stderr
 
         with (
-            suppress_loggers_during_rich_display(),
-            redirect_stderr(stderr_suppressor),
-            Live(progress_group, refresh_per_second=4),
+            redirect_stdout(output_suppressor),
+            redirect_stderr(output_suppressor),
+            Live(progress_group, refresh_per_second=4, console=get_console()),
         ):
             try:
                 total_completed = 0

@@ -93,7 +93,7 @@ class DatabaseManager:
                 INSERT INTO page_snapshots ({fields})
                 VALUES ({placeholders})
                 RETURNING snapshot_id
-            """  # noqa: S608
+            """
 
             result = conn.execute(sql, list(prepared_data.values())).fetchone()
             snapshot_id: int | None = result[0] if result else None
@@ -144,7 +144,7 @@ class DatabaseManager:
                         # Export to temp file using DuckDB's native Parquet support
                         # Note: table_name comes from internal dictionary keys, not user input
                         sql = (
-                            f"COPY (SELECT * FROM {table_name}) TO '{parquet_tmp}' (FORMAT PARQUET)"  # noqa: S608
+                            f"COPY (SELECT * FROM {table_name}) TO '{parquet_tmp}' (FORMAT PARQUET)"
                         )
                         conn.execute(sql)
 
@@ -240,7 +240,7 @@ class DatabaseManager:
                 FROM ranked_snapshots
                 WHERE rn <= ?
                 ORDER BY url, scraped_at DESC
-            """  # noqa: S608
+            """
 
             params = [*urls, limit_per_url]
             results = conn.execute(sql, params).fetchall()
@@ -277,7 +277,7 @@ class DatabaseManager:
                 FROM ranked_snapshots
                 WHERE rn <= 2
                 ORDER BY url, scraped_at DESC
-            """  # noqa: S608
+            """
 
             cursor = conn.execute(sql, urls)
             rows = cursor.fetchall()
@@ -336,6 +336,7 @@ class DatabaseManager:
             # Page doesn't exist - insert new record
             page_data.pop("id", None)  # Remove id (auto-generated)
             page_data.setdefault("enabled", True)
+            page_data.setdefault("offer_selection_strategy", "first")
             page_data.setdefault("created_at", now_in_configured_tz())
             page_data["updated_at"] = now_in_configured_tz()
 
@@ -346,7 +347,7 @@ class DatabaseManager:
                 INSERT INTO tracked_pages ({fields})
                 VALUES ({placeholders})
                 RETURNING id
-            """  # noqa: S608
+            """
             result = conn.execute(sql, list(page_data.values())).fetchone()
 
             if result is None:
@@ -578,7 +579,7 @@ class DatabaseManager:
                         UPDATE product_groups
                         SET {", ".join(update_parts)}
                         WHERE group_id = ?
-                    """  # noqa: S608
+                    """
                     conn.execute(sql, params)
                     logger.debug(f"Updated metadata for group '{name}'")
 
@@ -660,6 +661,67 @@ class DatabaseManager:
             sql = "DELETE FROM page_groups WHERE page_id = ? AND group_id = ?"
             conn.execute(sql, [page_id, group_id])
             logger.debug(f"Removed page {page_id} from group {group_id}")
+
+    def delete_tracked_page(self, url: str) -> dict[str, Any]:
+        """Delete tracked page and ALL related data (snapshots, group associations, etc.).
+
+        Raises:
+            ValueError: If URL not found in tracked_pages
+        """
+        with self.get_connection() as conn:
+            page_result = conn.execute(
+                "SELECT id, provider FROM tracked_pages WHERE url = ?", [url]
+            ).fetchone()
+
+            if not page_result:
+                raise ValueError(f"URL not found in tracked pages: {url}")
+
+            page_id, provider = page_result
+
+            snapshot_count_result = conn.execute(
+                "SELECT COUNT(*) FROM page_snapshots WHERE url = ?", [url]
+            ).fetchone()
+            snapshot_count = snapshot_count_result[0] if snapshot_count_result else 0
+
+            groups_before = conn.execute(
+                "SELECT group_id FROM page_groups WHERE page_id = ?", [page_id]
+            ).fetchall()
+            group_ids = [row[0] for row in groups_before]
+
+            # Delete operations (order is critical due to FK constraints)
+            conn.execute("DELETE FROM page_groups WHERE page_id = ?", [page_id]).fetchone()
+            associations_deleted = len(group_ids)
+
+            conn.execute("DELETE FROM page_snapshots WHERE url = ?", [url])
+
+            conn.execute("DELETE FROM tracked_pages WHERE id = ?", [page_id])
+
+            orphaned_groups = []
+            for group_id in group_ids:
+                remaining_pages_result = conn.execute(
+                    "SELECT COUNT(*) FROM page_groups WHERE group_id = ?", [group_id]
+                ).fetchone()
+                remaining_pages = remaining_pages_result[0] if remaining_pages_result else 0
+
+                if remaining_pages == 0:
+                    group_info = conn.execute(
+                        "SELECT name FROM product_groups WHERE group_id = ?", [group_id]
+                    ).fetchone()
+                    if group_info:
+                        orphaned_groups.append(group_info[0])
+
+            logger.debug(
+                f"Deleted tracked page: {url} (page_id={page_id}, snapshots={snapshot_count}, "
+                f"groups={associations_deleted}, orphaned_groups={len(orphaned_groups)})"
+            )
+
+            return {
+                "page_id": page_id,
+                "provider": provider,
+                "snapshots_deleted": snapshot_count,
+                "group_associations_removed": associations_deleted,
+                "orphaned_groups": orphaned_groups,
+            }
 
     def get_group_pages(self, group_name: str) -> list[dict[str, Any]]:
         """
@@ -803,6 +865,149 @@ class DatabaseManager:
         comparison = self.get_group_comparison(group_name)
         stats = comparison.get("statistics")
         return stats if isinstance(stats, dict) else None
+
+    def get_basket_comparison(self, group_names: list[str]) -> dict[str, Any]:
+        """Compare total basket costs across multiple product groups."""
+        logger.debug(f"Getting basket comparison for {len(group_names)} groups: {group_names}")
+
+        with self.get_connection() as conn:
+            # Build placeholders for parameterized query
+            placeholders = ",".join(["?" for _ in group_names])
+
+            # Core query using v_latest_group_prices view
+            # NOTE: Always fetches ALL products (no availability filter!)
+            query = f"""
+            WITH basket_data AS (
+                SELECT
+                    group_name,
+                    category,
+                    provider,
+                    product_name,
+                    current_price as price,
+                    currency,
+                    availability,
+                    has_promotion,
+                    scraped_at as snapshot_time
+                FROM v_latest_group_prices
+                WHERE group_name IN ({placeholders})
+            ),
+            provider_totals AS (
+                SELECT
+                    provider,
+                    -- Only sum AVAILABLE products for total cost
+                    SUM(CASE WHEN availability THEN price ELSE 0 END) as total_cost,
+                    COUNT(*) as product_count,
+                    SUM(CASE WHEN availability THEN 1 ELSE 0 END) as available_count,
+                    SUM(CASE WHEN has_promotion THEN 1 ELSE 0 END) as promotion_count
+                FROM basket_data
+                GROUP BY provider
+            ),
+            category_subtotals AS (
+                SELECT
+                    category,
+                    provider,
+                    -- Only sum AVAILABLE products in categories
+                    SUM(CASE WHEN availability THEN price ELSE 0 END) as subtotal,
+                    COUNT(*) as count
+                FROM basket_data
+                GROUP BY category, provider
+                ORDER BY provider, category
+            )
+            SELECT
+                (SELECT json_group_array(json_object(
+                    'provider', provider,
+                    'total_cost', ROUND(total_cost, 2),
+                    'product_count', product_count,
+                    'available_count', available_count,
+                    'promotion_count', promotion_count
+                )) FROM (SELECT * FROM provider_totals ORDER BY total_cost)) as providers,
+
+                (SELECT json_group_array(json_object(
+                    'group_name', group_name,
+                    'category', category,
+                    'provider', provider,
+                    'name', product_name,
+                    'price', ROUND(price, 2),
+                    'currency', currency,
+                    'is_available', availability,
+                    'is_promotion', has_promotion,
+                    'snapshot_time', snapshot_time
+                )) FROM (SELECT * FROM basket_data ORDER BY provider, category, group_name)) as products,
+
+                (SELECT json_group_array(json_object(
+                    'category', category,
+                    'provider', provider,
+                    'subtotal', ROUND(subtotal, 2),
+                    'count', count
+                )) FROM (SELECT * FROM category_subtotals)) as categories
+            """
+
+            result = conn.execute(query, group_names).fetchone()
+
+            providers = json.loads(result[0]) if result and result[0] else []
+            products = json.loads(result[1]) if result and result[1] else []
+            categories = json.loads(result[2]) if result and result[2] else []
+
+        statistics = self._calculate_basket_statistics(providers, products, group_names)
+
+        found_groups = {p["group_name"] for p in products}
+        missing_groups = [g for g in group_names if g not in found_groups]
+
+        return {
+            "providers": providers,
+            "products": products,
+            "categories": categories,
+            "statistics": statistics,
+            "missing_groups": missing_groups,
+        }
+
+    def _calculate_basket_statistics(
+        self,
+        providers: list[dict],
+        products: list[dict],
+        requested_groups: list[str],
+    ) -> dict[str, Any]:
+        """Calculate aggregate statistics for basket comparison."""
+        if not providers:
+            return {
+                "total_groups": 0,
+                "total_products": 0,
+                "providers_compared": 0,
+                "promotion_count": {},
+                "unavailable_count": {},
+                "price_ranges": None,
+            }
+
+        unique_groups = {p["group_name"] for p in products}
+
+        promotion_count = {p["provider"]: p["promotion_count"] for p in providers}
+        unavailable_count = {
+            p["provider"]: p["product_count"] - p["available_count"] for p in providers
+        }
+
+        sorted_providers = sorted(providers, key=lambda x: x["total_cost"])
+        min_provider = sorted_providers[0]
+        max_provider = sorted_providers[-1]
+        difference = max_provider["total_cost"] - min_provider["total_cost"]
+        difference_pct = (
+            (difference / min_provider["total_cost"] * 100) if min_provider["total_cost"] > 0 else 0
+        )
+
+        return {
+            "total_groups": len(unique_groups),
+            "total_products": (
+                len(products) // len(providers) if providers else 0
+            ),  # Products per provider
+            "providers_compared": len(providers),
+            "promotion_count": promotion_count,
+            "unavailable_count": unavailable_count,
+            "price_ranges": {
+                "min": {"provider": min_provider["provider"], "price": min_provider["total_cost"]},
+                "max": {"provider": max_provider["provider"], "price": max_provider["total_cost"]},
+                "difference": round(difference, 2),
+                "difference_pct": round(difference_pct, 2),
+            },
+        }
 
     # ==================== Utility Methods ====================
 

@@ -1,5 +1,4 @@
 from concurrent.futures import ThreadPoolExecutor, as_completed
-import logging
 from typing import cast
 
 import click
@@ -48,14 +47,6 @@ def refresh(ctx: click.Context, providers, group, url):
         # Refresh single product
         price-scout refresh --url "https://www.webshop-a/products/..."
     """
-    # Configure logging based on debug flag
-    debug = ctx.obj.get("debug", False)
-    if not debug:
-        # Production mode: only show warnings and errors
-        logging.getLogger().setLevel(logging.WARNING)
-        for logger_name in ["src", "config", "playwright", "urllib3", "asyncio"]:
-            logging.getLogger(logger_name).setLevel(logging.WARNING)
-
     db_manager = DatabaseManager(get_db_url(), read_only=False)
     tracker = PriceTracker(db_manager)
     provider_config_override = ctx.obj.get("provider_config")
