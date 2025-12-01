@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 import re
 from typing import Any
 from urllib.parse import urlparse
@@ -57,6 +58,62 @@ def get_db_url(config_path: str | None = None) -> str:
             db_url = str(user_dir / "database.duckdb")
 
     return db_url
+
+
+def get_data_directory() -> Path:
+    """Get data directory based on environment."""
+    if is_docker_environment():
+        return Path("/app/data")
+    elif is_development_environment():
+        return Path.cwd() / "data"
+    return get_user_directory() / "data"
+
+
+def resolve_url_file_path(file_path: str) -> Path:
+    """Resolve URL file path across different installation environments.
+
+    Resolution order:
+    1. Absolute path (as-is)
+    2. Expand ~ to home directory
+    3. Relative to current working directory
+    4. Check in data directory (Docker: /app/data, dev: ./data, global: ~/.price-scout/data)
+    5. Check in user directory (~/.price-scout/)
+
+    Raises:
+        FileNotFoundError: If file cannot be found in any location
+    """
+    path = Path(file_path)
+
+    if path.is_absolute():
+        if path.exists():
+            return path
+        raise FileNotFoundError(f"URL file not found: {path}")
+
+    # Expand ~ to home directory
+    expanded = path.expanduser()
+    if expanded != path and expanded.exists():
+        return expanded
+
+    # Relative to current working directory
+    cwd_path = Path.cwd() / path
+    if cwd_path.exists():
+        return cwd_path
+
+    # Check data directory (environment-aware)
+    data_path = get_data_directory() / path.name
+    if data_path.exists():
+        return data_path
+
+    # Check user directory (~/.price-scout/)
+    user_path = get_user_directory() / path.name
+    if user_path.exists():
+        return user_path
+
+    # Not found!
+    searched = [str(cwd_path), str(data_path), str(user_path)]
+    raise FileNotFoundError(
+        f"URL file '{file_path}' not found. Searched:\n" + "\n".join(f"  - {p}" for p in searched)
+    )
 
 
 def extract_amount_from_name(product_name: str) -> str | None:

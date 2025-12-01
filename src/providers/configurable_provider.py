@@ -324,9 +324,7 @@ class ConfigurableProvider(AsyncBaseProvider):
 
             if promotion_starts_at or promotion_ends_at:
                 has_promotion = True
-                logger.debug(
-                    f"Time-limited promotion: {promotion_starts_at} - {promotion_ends_at}"
-                )
+                logger.debug(f"Time-limited promotion: {promotion_starts_at} - {promotion_ends_at}")
 
         currency_path = field_mappings.get("currency", "offers.priceCurrency")
         currency = FieldMapper.get_value(json_ld, currency_path, default="EUR")
@@ -479,12 +477,11 @@ class ConfigurableProvider(AsyncBaseProvider):
 
         extracted_data = await extractor.extract_all_fields(page, field_selectors)
 
-        is_marketplace_only_detected = extracted_data.get("is_marketplace_only", False)
-
         if not extracted_data:
             logger.debug("No data extracted via selectors")
             return None
 
+        is_marketplace_only_detected = extracted_data.get("is_marketplace_only", False)
         if not extracted_data.get("name") and not is_marketplace_only_detected:
             logger.debug("No name extracted and not marketplace-only")
             return None

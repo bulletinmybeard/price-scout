@@ -12,7 +12,7 @@ from src.cli.formatters import (
     display_comparison_table_with_changes,
     output_multi_json_response,
 )
-from src.cli.helpers import get_console, get_db_url
+from src.cli.helpers import get_console, get_db_url, resolve_url_file_path
 from src.config.config_loader import load_typed_config
 from src.database.db_manager import DatabaseManager
 from src.price_tracker.bulk_tracker import BulkTracker
@@ -21,6 +21,21 @@ from src.price_tracker.tracker import PriceTracker
 from src.providers import get_factory
 
 logger = get_logger(__name__)
+
+
+def parse_url_file(file_path: str) -> list[str]:
+    """Parse URLs from file, one per line. Ignores empty lines and # comments."""
+    urls = []
+    with open(file_path) as f:
+        for line_num, line in enumerate(f, 1):
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            if not line.startswith(("http://", "https://")):
+                logger.warning(f"Skipping invalid URL at line {line_num}: {line}")
+                continue
+            urls.append(line)
+    return urls
 
 
 def _handle_delete_products(urls: list[str], skip_confirmation: bool, json_output: bool):
@@ -185,8 +200,14 @@ def _handle_delete_products(urls: list[str], skip_confirmation: bool, json_outpu
     "--url",
     "-u",
     multiple=True,
-    required=True,
     help="Product page URL(s) - max 25 URLs for comparison",
+)
+@click.option(
+    "--url-file",
+    "-F",
+    type=str,
+    multiple=True,
+    help="Read URLs from file (searches cwd, data/, ~/.price-scout/)",
 )
 @click.option("--json", "json_output", is_flag=True, help="Output as JSON (all BaseProduct fields)")
 @click.option("--check", is_flag=True, help="Check product without tracking to database")
@@ -221,7 +242,8 @@ def _handle_delete_products(urls: list[str], skip_confirmation: bool, json_outpu
 @click.pass_context
 def track(
     ctx,
-    url: str,
+    url: tuple[str, ...],
+    url_file: tuple[str, ...],
     json_output: bool,
     check: bool,
     cached: bool,
@@ -241,19 +263,33 @@ def track(
         # Single URL
         price-scout track --url "https://www.store-a.example/..."
         price-scout track --url "https://www.store-b.example/..." --check
-        price-scout track --url "https://www.store-c.example/..." --json
 
-        # Track with product group (creates group if doesn't exist)
-        price-scout track --url "URL" --group "Dog Food Comparison"
-        price-scout track --url "URL1" --url "URL2" --group "Weekly Groceries"
+        # From file (one URL per line, # comments ignored)
+        price-scout track --url-file products.txt
+        price-scout track -F products.txt --group "Weekly Groceries"
 
         # Multi-URL comparison
         price-scout track --url "URL1" --url "URL2" --url "URL3"
         price-scout track --url "URL1" --url "URL2" --cached
-        price-scout track --url "URL1" --url "URL2" --url "URL3" --json
-        price-scout track --url "URL1" --url "URL2" --check
     """
-    unique_urls = list(dict.fromkeys(url))
+    if url and url_file:
+        raise click.UsageError("Cannot use both --url and --url-file. Choose one.")
+    if not url and not url_file:
+        raise click.UsageError("Must provide either --url or --url-file.")
+    if len(url_file) > 1:
+        raise click.UsageError("Only one --url-file/-F argument is allowed.")
+
+    if url_file:
+        try:
+            resolved_path = resolve_url_file_path(url_file[0])
+            urls_from_file = parse_url_file(str(resolved_path))
+        except FileNotFoundError as e:
+            raise click.UsageError(str(e)) from None
+        if not urls_from_file:
+            raise click.UsageError(f"No valid URLs found in {resolved_path}")
+        unique_urls = list(dict.fromkeys(urls_from_file))
+    else:
+        unique_urls = list(dict.fromkeys(url))
 
     if delete:
         return _handle_delete_products(unique_urls, yes, json_output)
