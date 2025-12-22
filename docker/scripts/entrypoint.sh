@@ -23,8 +23,6 @@ else
     echo "✓ DuckDB database found: /data/price_scout.duckdb"
 fi
 
-echo ""
-
 # Run database migrations with auto-backup
 /run_migrations.sh || exit 1
 

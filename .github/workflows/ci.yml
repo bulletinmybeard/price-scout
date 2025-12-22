@@ -100,7 +100,7 @@ jobs:
       - name: Install project
         run: poetry install --no-interaction
 
-      - name: Check poetry.lock consistency
+      - name: Check poetry.lock file
         run: |
           cp poetry.lock poetry.lock.bak
           poetry --version
