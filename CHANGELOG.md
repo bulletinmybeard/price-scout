@@ -76,7 +76,7 @@ scout compare groups --name "Group1" --name "Group2" --name "Group3"
 
 - **Formal Migration System**: Laravel-style database migrations
 
-  - Numbered migration files (0001\_*, 0002\_*, etc.) in `scripts/migrations/`
+  - Numbered migration files (0001\_*, 0002\_*, etc.) in `src/database/migrations/` (shipped in the Python package)
   - Version tracking in `schema_migrations` table
   - CLI commands: `scout db migrate apply/status/rollback`
   - Checksum verification (SHA256) to detect modified migrations

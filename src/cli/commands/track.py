@@ -44,7 +44,7 @@ def _handle_delete_products(urls: list[str], skip_confirmation: bool, json_outpu
     db = DatabaseManager(db_url, read_only=False)
 
     deletion_results: list[dict[str, Any]] = []
-    all_orphaned_groups = set()
+    all_deleted_empty_groups = set()
 
     for url in urls:
         try:
@@ -144,9 +144,9 @@ def _handle_delete_products(urls: list[str], skip_confirmation: bool, json_outpu
             result["status"] = "deleted"
             result["snapshots_deleted"] = deletion_summary["snapshots_deleted"]
             result["group_associations_removed"] = deletion_summary["group_associations_removed"]
-            result["orphaned_groups"] = deletion_summary["orphaned_groups"]
+            result["deleted_empty_groups"] = deletion_summary["deleted_empty_groups"]
 
-            all_orphaned_groups.update(deletion_summary["orphaned_groups"])
+            all_deleted_empty_groups.update(deletion_summary["deleted_empty_groups"])
 
             if not json_output:
                 console.print(f"[green]✓ Deleted: {result['url'][:80]}...[/green]")
@@ -158,18 +158,11 @@ def _handle_delete_products(urls: list[str], skip_confirmation: bool, json_outpu
                 console.print(f"[red]✗ Failed: {result['url'][:80]}...[/red]")
                 console.print(f"[red]  Error: {e!s}[/red]")
 
-    if all_orphaned_groups and not skip_confirmation and not json_output:
+    if all_deleted_empty_groups and not skip_confirmation and not json_output:
         console.print()
-        console.print(
-            f"[yellow]Warning: {len(all_orphaned_groups)} product group(s) now empty:[/yellow]"
-        )
-        for group_name in sorted(all_orphaned_groups):
+        console.print(f"[dim]Removed {len(all_deleted_empty_groups)} empty product group(s):[/dim]")
+        for group_name in sorted(all_deleted_empty_groups):
             console.print(f"  • {group_name}")
-        console.print()
-        console.print(
-            "[dim]Empty groups are kept by default. You can manually delete them via:[/dim]"
-        )
-        console.print("[dim]  scout groups list  # View all groups[/dim]")
         console.print()
 
     if json_output:
@@ -179,7 +172,7 @@ def _handle_delete_products(urls: list[str], skip_confirmation: bool, json_outpu
                     "status": "success",
                     "deleted_count": len([r for r in deletion_results if r["status"] == "deleted"]),
                     "failed_count": len([r for r in deletion_results if r["status"] == "error"]),
-                    "orphaned_groups": list(all_orphaned_groups),
+                    "deleted_empty_groups": list(all_deleted_empty_groups),
                     "results": deletion_results,
                 },
                 indent=2,

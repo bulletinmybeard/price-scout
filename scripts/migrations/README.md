@@ -1,6 +1,8 @@
 # Database Migrations
 
-This directory contains numbered database migration files for Price Scout.
+Migration files live in `src/database/migrations/` so they ship inside the Python
+package (pip installs and Docker). This directory keeps migration documentation for
+developers working from a git checkout.
 
 ## Naming Convention
 
@@ -121,14 +123,14 @@ Migration 0001_add_offer_selection_strategy has been modified since it was appli
 1. **Determine next version number**:
 
    ```bash
-   ls scripts/migrations/ | grep -E "^[0-9]{4}_" | tail -1
+   ls src/database/migrations/ | grep -E "^[0-9]{4}_" | tail -1
    # If last is 0001_*, use 0002
    ```
 
 1. **Create migration file**:
 
    ```bash
-   touch scripts/migrations/0002_your_description.py
+   touch src/database/migrations/0002_your_description.py
    ```
 
 1. **Write migration logic**:

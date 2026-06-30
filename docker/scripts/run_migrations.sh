@@ -38,17 +38,25 @@ fi
 echo ""
 
 echo "Checking migration status..."
-if ! poetry run price-scout db migrate status 2>&1 | grep -q "Pending:"; then
-    # No pending migrations or error occurred
-    if poetry run price-scout db migrate status 2>&1 | grep -q "All migrations up to date"; then
-        echo -e "${GREEN}✓ All migrations up to date${NC}"
-        echo ""
-        exit 0
-    fi
+set +e
+poetry run price-scout db migrate check
+CHECK_EXIT=$?
+set -e
+
+if [ "$CHECK_EXIT" -eq 0 ]; then
+    echo -e "${GREEN}✓ All migrations up to date${NC}"
+    echo ""
+    exit 0
 fi
 
-# Show pending migrations
-poetry run price-scout db migrate status | grep -A 10 "Pending:" || true
+if [ "$CHECK_EXIT" -eq 2 ]; then
+    echo -e "${RED}✗ Failed to check migration status${NC}"
+    echo ""
+    exit 2
+fi
+
+echo -e "${YELLOW}Pending migrations detected${NC}"
+poetry run price-scout db migrate status --json || true
 
 echo ""
 echo "Applying migrations..."

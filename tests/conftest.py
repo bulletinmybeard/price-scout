@@ -11,6 +11,29 @@ from src.database.db_manager import DatabaseManager
 
 
 @pytest.fixture
+def migrations_dir(tmp_path: Path) -> Path:
+    """Temporary migration directory for migration runner tests."""
+    migration_dir = tmp_path / "migrations"
+    migration_dir.mkdir()
+    (migration_dir / "0001_test_migration.py").write_text(
+        """
+def up(conn):
+    conn.execute("CREATE TABLE IF NOT EXISTS migration_test (id INTEGER)")
+
+def down(conn):
+    conn.execute("DROP TABLE IF EXISTS migration_test")
+
+def check_applied(conn):
+    result = conn.execute(
+        "SELECT table_name FROM information_schema.tables WHERE table_name = 'migration_test'"
+    ).fetchone()
+    return result is not None
+"""
+    )
+    return migration_dir
+
+
+@pytest.fixture
 def db_manager() -> Generator[DatabaseManager, None, None]:
     """Create a test database manager with temporary DuckDB file."""
     with tempfile.NamedTemporaryFile(suffix=".duckdb", delete=False) as tmp_file:

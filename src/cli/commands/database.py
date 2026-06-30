@@ -1,4 +1,6 @@
+import json
 from pathlib import Path
+import sys
 from typing import cast
 
 from chalkbox import Spinner
@@ -321,7 +323,8 @@ def migrate_apply(dry_run: bool):
 
 
 @migrate.command()
-def status():
+@click.option("--json", "as_json", is_flag=True, help="Output status as JSON")
+def status(as_json: bool):
     """Show migration status."""
 
     db_url = get_db_url()
@@ -329,6 +332,10 @@ def status():
     try:
         runner = MigrationRunner(db_url)
         status_info = runner.get_status()
+
+        if as_json:
+            click.echo(json.dumps(status_info, indent=2, default=str))
+            return
 
         console.print()
         console.print("[bold]Migration Status[/bold]")
@@ -362,6 +369,36 @@ def status():
     except Exception as e:
         show_error("Failed to get migration status", details=str(e))
         raise click.Abort() from e
+
+
+@migrate.command(name="check")
+def migrate_check():
+    """Check migration status using exit codes for automation.
+
+    Exit codes:
+      0 - All migrations up to date
+      1 - Pending migrations need to be applied
+      2 - Error checking migration status
+    """
+    db_url = get_db_url()
+
+    try:
+        runner = MigrationRunner(db_url)
+        status_info = runner.get_status()
+
+        if status_info.get("error"):
+            click.echo(status_info["error"], err=True)
+            sys.exit(2)
+
+        if status_info.get("pending_count", 0) > 0:
+            sys.exit(1)
+
+        sys.exit(0)
+    except SystemExit:
+        raise
+    except Exception as e:
+        click.echo(str(e), err=True)
+        sys.exit(2)
 
 
 @migrate.command()

@@ -13,26 +13,33 @@ from src.database.db_manager import DatabaseManager
 logger = get_logger(__name__)
 
 
+def get_default_migrations_dir() -> Path:
+    """Resolve migrations directory for dev checkouts and installed packages."""
+    package_dir = Path(__file__).parent / "migrations"
+    if package_dir.exists() and any(package_dir.glob("[0-9][0-9][0-9][0-9]_*.py")):
+        return package_dir
+
+    current = Path(__file__).parent
+    while current != current.parent:
+        if (current / "pyproject.toml").exists():
+            dev_dir = current / "scripts" / "migrations"
+            if dev_dir.exists():
+                return dev_dir
+            break
+        current = current.parent
+
+    return package_dir
+
+
 class MigrationRunner:
     """Manages database schema migrations with version tracking."""
 
     def __init__(self, db_url: str, migrations_dir: Path | None = None):
         self.db_url = db_url
-        self.migrations_dir = migrations_dir or self._get_default_migrations_dir()
+        self.migrations_dir = migrations_dir or get_default_migrations_dir()
 
         if not self.migrations_dir.exists():
             logger.warning(f"Migrations directory not found: {self.migrations_dir}")
-            self.migrations_dir.mkdir(parents=True, exist_ok=True)
-
-    def _get_default_migrations_dir(self) -> Path:
-        # Try to find project root (where pyproject.toml is)
-        current = Path(__file__).parent
-        while current != current.parent:
-            if (current / "pyproject.toml").exists():
-                return current / "scripts" / "migrations"
-            current = current.parent
-
-        return Path(__file__).parent.parent.parent / "scripts" / "migrations"
 
     @staticmethod
     def _ensure_migrations_table(conn):
@@ -279,11 +286,11 @@ class MigrationRunner:
                 self._ensure_migrations_table(conn)
 
                 migrations = conn.execute(
-                    f"""
-                    SELECT version, name FROM schema_migrations
-                    ORDER BY version DESC LIMIT {count}
                     """
-                ).fetchall()
+                    SELECT version, name FROM schema_migrations
+                    ORDER BY version DESC
+                    """
+                ).fetchall()[:count]
 
                 if not migrations:
                     result["success"] = False

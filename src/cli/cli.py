@@ -14,10 +14,7 @@ from src.cli.commands.refresh import refresh
 from src.cli.commands.track import track
 from src.cli.helpers import get_db_url
 from src.config.config_loader import load_typed_config
-from src.database.migration_checker import (
-    MIGRATION_EXEMPT_COMMANDS,
-    check_migrations_required,
-)
+from src.database.migration_checker import check_migrations_required, is_command_exempt
 
 _shutdown_requested = False
 
@@ -124,7 +121,7 @@ def cli(ctx: click.Context, config_file: Path | str, provider_config: str, debug
     atexit.register(_cleanup_on_exit)
     logger.debug("Atexit cleanup handler registered")
 
-    if ctx.invoked_subcommand not in MIGRATION_EXEMPT_COMMANDS:
+    if not is_command_exempt(ctx.invoked_subcommand):
         try:
             db_url = get_db_url(config_file)
             migration_status = check_migrations_required(db_url)

@@ -44,7 +44,9 @@ class MigrationStatus:
     schema_migrations_exists: bool
 
 
-def check_migrations_required(db_path: str | Path) -> MigrationStatus:
+def check_migrations_required(
+    db_path: str | Path, migrations_dir: Path | None = None
+) -> MigrationStatus:
     """Check if database needs migrations before CLI operations.
 
     This function determines whether the CLI should block execution due to
@@ -80,7 +82,7 @@ def check_migrations_required(db_path: str | Path) -> MigrationStatus:
         )
 
     try:
-        runner = MigrationRunner(str(db_path))
+        runner = MigrationRunner(str(db_path), migrations_dir=migrations_dir)
         status = runner.get_status()
 
         pending_count = status.get("pending_count", 0)

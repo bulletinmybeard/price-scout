@@ -683,7 +683,7 @@ class DatabaseManager:
 
             conn.execute("DELETE FROM tracked_pages WHERE id = ?", [page_id])
 
-            orphaned_groups = []
+            deleted_empty_groups = []
             for group_id in group_ids:
                 remaining_pages_result = conn.execute(
                     "SELECT COUNT(*) FROM page_groups WHERE group_id = ?", [group_id]
@@ -695,11 +695,13 @@ class DatabaseManager:
                         "SELECT name FROM product_groups WHERE group_id = ?", [group_id]
                     ).fetchone()
                     if group_info:
-                        orphaned_groups.append(group_info[0])
+                        deleted_empty_groups.append(group_info[0])
+                        conn.execute("DELETE FROM product_groups WHERE group_id = ?", [group_id])
 
             logger.debug(
                 f"Deleted tracked page: {url} (page_id={page_id}, snapshots={snapshot_count}, "
-                f"groups={associations_deleted}, orphaned_groups={len(orphaned_groups)})"
+                f"groups={associations_deleted}, "
+                f"deleted_empty_groups={len(deleted_empty_groups)})"
             )
 
             return {
@@ -707,7 +709,8 @@ class DatabaseManager:
                 "provider": provider,
                 "snapshots_deleted": snapshot_count,
                 "group_associations_removed": associations_deleted,
-                "orphaned_groups": orphaned_groups,
+                "deleted_empty_groups": deleted_empty_groups,
+                "orphaned_groups": deleted_empty_groups,
             }
 
     def get_group_pages(self, group_name: str) -> list[dict[str, Any]]:
