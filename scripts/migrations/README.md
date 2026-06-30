@@ -4,6 +4,22 @@ Migration files live in `src/database/migrations/` so they ship inside the Pytho
 package (pip installs and Docker). This directory keeps migration documentation for
 developers working from a git checkout.
 
+## CLI Commands
+
+```bash
+# Human-readable status
+price-scout db migrate status
+
+# JSON output (automation)
+price-scout db migrate status --json
+
+# Exit-code check (Docker/CI: 0=ok, 1=pending, 2=error)
+price-scout db migrate check
+
+# Apply pending migrations
+price-scout db migrate apply
+```
+
 ## Naming Convention
 
 Migrations must follow this format:

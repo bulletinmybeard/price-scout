@@ -83,14 +83,17 @@ price-scout --version
 
 ```bash
 # Check migration status
-scout db migrate status
+price-scout db migrate status
+
+# Automation-friendly check (exit 0=ok, 1=pending, 2=error)
+price-scout db migrate check
 
 # Apply pending migrations (backup first!)
 cp ~/.price-scout/database.duckdb ~/.price-scout/database.duckdb.backup
-scout db migrate apply
+price-scout db migrate apply
 ```
 
-See [CHANGELOG.md](CHANGELOG.md) for breaking changes. Full migration guide: [docs/MIGRATIONS.md](.claude/MIGRATIONS.md).
+See [CHANGELOG.md](CHANGELOG.md) for breaking changes. Full migration guide: [scripts/migrations/README.md](scripts/migrations/README.md).
 
 </details>
 
@@ -349,8 +352,12 @@ Once a product is tracked and the first snapshot created, the strategy for this 
 
 **To change the strategy for a tracked product**:
 
-1. Delete all snapshots for the product URL
-1. Delete the `tracked_pages` entry
+1. Delete the product (removes snapshots, tracking entry, and any now-empty groups):
+
+   ```bash
+   price-scout track --delete --url "PRODUCT_URL"
+   ```
+
 1. Re-track the product URL (new strategy will be locked)
 
 #### Best Practices

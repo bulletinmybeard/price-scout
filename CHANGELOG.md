@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [unreleased]
 
+### Added
+
+- **`price-scout db migrate check`**: Exit-code based migration check for automation (Docker, CI)
+  - Exit `0` = up to date, `1` = pending migrations, `2` = error
+- **`price-scout db migrate status --json`**: Machine-readable migration status output
+- **Packaged migrations**: Migration files ship inside the Python wheel at `src/database/migrations/`
+  - Fixes pip/PyPI installs where `scripts/migrations/` was not available
+- **Empty group cleanup**: Deleting a tracked product now removes product groups that become empty
+- **Migration tests**: Unit tests for `MigrationRunner`, `migration_checker`, and `delete_tracked_page`
+
 ### Changed
 
 - **BREAKING**: Basket comparison command moved from `scout groups basket` to `scout compare groups`
@@ -29,6 +39,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - "Unavailable" column added to Provider Totals table
   - Products marked with "OUT" status in Product Breakdown
   - More transparent and accurate cost calculations
+
+- **Docker migrations**: Startup script uses `db migrate check` exit codes instead of parsing CLI text
 
 - **Dependencies**: Updated Python packages to latest compatible versions
 
