@@ -1,0 +1,102 @@
+# Example Provider Configuration - API-Based Approach
+# This demonstrates the safest, most legal approach to data extraction
+#
+# BEST PRACTICES:
+# 1. Use official APIs when available (check provider's developer portal)
+# 2. Respect robots.txt directives
+# 3. Implement proper rate limiting
+# 4. Cache responses to minimize requests
+# 5. Include contact information in User-Agent header
+
+name: "example_store_api_based"
+country: "US"
+base_url: "https://api.example-retailer-store.com"  # Use API endpoint, not website
+
+# API configuration (preferred over web scraping)
+api:
+  enabled: true
+  base_url: "https://api.example-store.com/v1"
+  authentication:
+    type: "api_key"  # or "oauth", "bearer_token"
+    key_param: "apikey"  # Query parameter name
+  rate_limit:
+    requests_per_second: 5  # API-specific rate limit
+    burst: 10  # Allow short bursts
+
+# Browser configuration (only used if API fails or is unavailable)
+browser:
+  headless: true
+  wait_strategy: "domcontentloaded"
+  wait_delay: 3  # Longer delay = more respectful
+
+  # Robots.txt compliance
+  respect_robots_txt: true  # IMPORTANT: Always respect robots.txt
+
+  # User agent with contact info (transparency)
+  user_agent: "PriceScout/1.0 (+https://yourwebsite.com/contact; research@yourwebsite.com)"
+
+extraction:
+  # For API responses (JSON)
+  priority: ["api_json", "json-ld"]
+
+  # API JSON extraction (direct field mapping)
+  api_json:
+    mappings:
+      name: "product.name"
+      description: "product.description"
+      brand: "product.brand"
+      price: "product.price.amount"
+      currency: "product.price.currency"
+      sku: "product.id"
+      image_url: "product.images.0.url"  # First image
+      availability: "product.stock.status"
+
+  # Fallback to schema.org JSON-LD if API not available
+  json_ld:
+    default_availability_when_missing: true
+    field_mappings:
+      name: ["name"]
+      price: ["offers.price"]
+      currency: ["offers.priceCurrency", {"default": "USD"}]
+      availability: ["offers.availability"]
+
+# Caching to reduce requests
+caching:
+  enabled: true
+  ttl: 3600  # Cache for 1 hour
+  storage: "redis"  # or "file", "memory"
+  cache_key_pattern: "{provider}:{url}"
+
+# Conservative rate limiting
+rate_limit:
+  requests_per_minute: 10  # Very conservative
+  delay_between_requests: 6  # 6 seconds between requests
+  respect_retry_after: true  # Honor Retry-After header
+  max_retries: 1  # Minimal retries
+  backoff_strategy: "exponential"  # Exponential backoff
+
+# Error handling
+error_handling:
+  on_rate_limit: "stop"  # Stop immediately if rate limited
+  on_403_forbidden: "stop"  # Stop if forbidden
+  on_429_too_many_requests: "backoff"  # Back off and retry
+  max_consecutive_errors: 3  # Stop after 3 errors in a row
+
+# Logging and transparency
+logging:
+  level: "INFO"
+  include_requests: true  # Log all requests for audit trail
+  redact_sensitive: true  # Don't log API keys or tokens
+
+# Legal compliance flags
+compliance:
+  gdpr_compliant: true  # Don't store personal data
+  respect_do_not_track: true  # Honor DNT header
+  data_retention_days: 90  # Delete old data after 90 days
+
+# Contact information (for website owners to reach you)
+contact:
+  name: "Your Name"
+  email: "your@email.com"
+  website: "https://yourwebsite.com"
+  purpose: "Price comparison research"  # Be transparent about your purpose

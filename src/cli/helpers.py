@@ -30,7 +30,7 @@ def get_console(force_colors: bool | None = None) -> Console:
     return Console(force_terminal=force_colors) if force_colors else Console()
 
 
-def get_db_url(config_path: str | None = None) -> str:
+def get_db_url(config_path: str | Path | None = None) -> str:
     """
     Get database URL from config using type-safe Pydantic models.
 

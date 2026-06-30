@@ -1,0 +1,67 @@
+# Example Provider Configuration - Basic
+# This is a fictional example for educational purposes only
+#
+# IMPORTANT: Before scraping any website, always:
+# 1. Check robots.txt (https://example-retailer-store.com/robots.txt)
+# 2. Review the website's Terms of Service
+# 3. Respect rate limits and implement delays
+# 4. Consider using official APIs if available
+
+name: "example_store_basic"
+country: "US"
+base_url: "https://example-retailer-store.com"
+
+# Browser configuration
+browser:
+  headless: true  # Run browser in headless mode
+  wait_strategy: "domcontentloaded"  # Wait for DOM to load
+  wait_delay: 1  # Wait 1 second after page load (respectful crawling)
+
+# Extraction configuration
+extraction:
+  priority: ["json-ld"]  # Use JSON-LD (schema.org standard)
+
+  json_ld:
+    # When JSON-LD doesn't specify availability, assume product is available
+    default_availability_when_missing: true
+
+    # Field mappings - map JSON-LD fields to our database schema
+    # Uses standard schema.org Product type fields
+    field_mappings:
+      # Basic product info
+      name: ["name"]  # Product name
+      description: ["description"]  # Product description
+      brand: ["brand.name", "brand"]  # Brand name (try nested first, then direct)
+
+      # Pricing info (from schema.org Offer type)
+      price: ["offers.price", "offers.lowPrice"]  # Current price
+      currency: ["offers.priceCurrency"]  # Currency code (USD, EUR, etc.)
+      original_price: ["offers.highPrice"]  # Original/MSRP price (if on sale)
+
+      # Product identifiers
+      sku: ["sku"]  # Stock Keeping Unit
+      gtin: ["gtin", "gtin13", "gtin14"]  # Global Trade Item Number
+
+      # Images
+      image_url: ["image", "image.url"]  # Main product image
+
+      # Availability (from schema.org ItemAvailability)
+      availability: ["offers.availability"]  # InStock, OutOfStock, etc.
+
+# Transformations - clean up extracted data
+transformations:
+  # Split comma-separated categories into array
+  category:
+    type: "split"
+    delimiter: ","
+
+  # Clean up product names (remove extra whitespace)
+  name:
+    type: "regex"
+    pattern: "\\s+"
+    replacement: " "
+
+# Rate limiting (be respectful!)
+rate_limit:
+  requests_per_minute: 30  # Max 30 requests per minute
+  delay_between_requests: 2  # 2 seconds between requests
