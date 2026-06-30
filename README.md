@@ -25,6 +25,7 @@
 **Local Data Storage** - All data stored locally, no accounts, no cloud services
 **Auto-Detection** - Automatically detects retailer from URL
 **Product Groups** - Compare same product across multiple stores
+**Basket Comparison** - Compare total costs across multiple product groups
 **Price Tracking** - Historical data with automated change detection
 **Configurable** - YAML-based provider configs, easily extensible
 **Docker Ready** - One-command setup with virtual display for headless rendering
@@ -62,6 +63,36 @@ docker exec -it price-scout price-scout track --url "PRODUCT_URL"
 
 Data saved to database.
 ```
+
+**Upgrading from a previous version?**
+
+<details>
+<summary>Migration instructions (v1.2.0+)</summary>
+
+Database migrations are only needed when upgrading to v1.2.0 or later with an existing database.
+
+**Check your version:**
+
+```bash
+price-scout --version
+```
+
+**Docker users:** Migrations run automatically on container startup. No action needed.
+
+**Local/PyPI users:**
+
+```bash
+# Check migration status
+scout db migrate status
+
+# Apply pending migrations (backup first!)
+cp ~/.price-scout/database.duckdb ~/.price-scout/database.duckdb.backup
+scout db migrate apply
+```
+
+See [CHANGELOG.md](CHANGELOG.md) for breaking changes. Full migration guide: [docs/MIGRATIONS.md](.claude/MIGRATIONS.md).
+
+</details>
 
 ### pip (Alternative)
 
@@ -188,9 +219,19 @@ price-scout track --url "URL" --check
 # Track and add to group in one command
 price-scout track --url "URL" --group "Group Name"
 
-# Refresh all tracked products (creates ne snapshots)
+# Track from a file (one URL per line, # comments are being ignored)
+price-scout track --url-file weekly_groceries_products.txt
+price-scout track -F weekly_groceries_products.txt --group "Weekly Groceries"
+
+# Refresh all tracked products (creates new snapshots)
 price-scout refresh
 ```
+
+**URL File Argument**: The `--url-file` option searches for files in:
+
+- Current directory
+- Data directory (`./data/` local, `/app/data/` Docker, `~/.price-scout/data/` global)
+- User directory (`~/.price-scout/`)
 
 ### Basic Commands
 
@@ -214,6 +255,9 @@ price-scout groups list
 
 # Compare prices within a group
 price-scout groups compare "Group Name"
+
+# Compare basket costs across multiple groups
+price-scout compare groups --name "Coffee" --name "Milk" --name "Bread"
 ```
 
 ### Database Management
@@ -266,6 +310,69 @@ Schedule regular price updates with cron:
 # Add to crontab (run every day at 8 AM)
 0 8 * * * docker exec price-scout price-scout refresh
 ```
+
+### Handling Multi-Offer Products
+
+Many retailers offer different product options and prices, commonly to find for **refurbished items** or **product editions**:
+
+**Example for a refurbished product)**:
+
+- Refurbished "Excellent" condition: €509.99
+- Refurbished "Very Good" condition: €495.99
+- Refurbished "Good" condition: €491.99
+
+#### How Price Scout Handles This
+
+Price Scout uses an **offer selection strategy** to determine which price to track:
+
+- `first` (default) - Select the first price from multi-offer products
+- `cheapest` - Select the lowest price regardless of its availability
+- `cheapest_available` - Select the lowest price that's in stock
+
+**Configuration Example**:
+
+```yaml
+extraction:
+  json_ld:
+    offer_selection_strategy: "first"  # or "cheapest" or "cheapest_available"
+```
+
+#### Strategy Locking
+
+Once a product is tracked and the first snapshot created, the strategy for this product will be locked to the `offer_selection_strategy` at the time to prevent inaccurate "price changes" over time.
+
+**Example of what strategy locking prevents**:
+
+- Day 1: Track with `cheapest` strategy → €491.99 (Good condition)
+- Day 2: Config changed to `first` → €509.99 (Excellent condition)
+- Without locking: Database shows 3.7% "price increase" but nothing actually changed!
+
+**To change the strategy for a tracked product**:
+
+1. Delete all snapshots for the product URL
+1. Delete the `tracked_pages` entry
+1. Re-track the product URL (new strategy will be locked)
+
+#### Best Practices
+
+**For new products (single offer)**: No action needed - works automatically
+
+**For refurbished with multiple offers**:
+
+- Use `first` strategy (default) for most reliable tracking
+- Or use `cheapest_available` if you want best deals
+- Understand you're tracking a price point, not a specific condition
+
+**For condition-specific tracking**:
+
+- Track each condition as a separate product
+- Use different product names (e.g., "PS5 (Refurbished - Good)")
+
+#### Note: Schema.org Limitations
+
+Unfortunately, Schema.org doesn't have a standard for refurbished condition grades (Excellent/Good/Fair). Most retailers mark all offers as generic `"RefurbishedCondition"` without specifying the grade in structured data.
+
+The condition grades you see in the UI aren't in the JSON-LD data that Price Scout extracts. This is a limitation of the standardized format, not the tool.
 
 ## Platform Compatibility
 

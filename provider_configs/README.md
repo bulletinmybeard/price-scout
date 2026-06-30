@@ -34,13 +34,14 @@ price-scout --provider-config my_store.yaml track --url "PRODUCT_URL"
 
 ### Optional Fields
 
-| Field                                                  | Description                 | Default              |
-| ------------------------------------------------------ | --------------------------- | -------------------- |
-| `wait_strategy`                                        | Page load strategy          | `"domcontentloaded"` |
-| `wait_delay`                                           | Extra wait time (seconds)   | `0`                  |
-| `extraction.json_ld.field_mappings`                    | Map nested JSON-LD fields   | Auto-detected        |
-| `extraction.json_ld.default_availability_when_missing` | Fallback availability       | `false`              |
-| `transformations`                                      | Post-process extracted data | None                 |
+| Field                                                  | Description                    | Default              |
+| ------------------------------------------------------ | ------------------------------ | -------------------- |
+| `wait_strategy`                                        | Page load strategy             | `"domcontentloaded"` |
+| `wait_delay`                                           | Extra wait time (seconds)      | `0`                  |
+| `extraction.json_ld.field_mappings`                    | Map nested JSON-LD fields      | Auto-detected        |
+| `extraction.json_ld.default_availability_when_missing` | Fallback availability          | `false`              |
+| `extraction.json_ld.offer_selection_strategy`          | Multi-offer selection strategy | `"first"`            |
+| `transformations`                                      | Post-process extracted data    | None                 |
 
 ## Field Mappings
 
@@ -65,6 +66,145 @@ extraction:
 **Fallback order**: Tries each path left-to-right, uses first non-None value
 
 **Defaults**: Use `{"default": "value"}` as last item to provide fallback
+
+## Multi-Offer Products (e.g., refurbished items)
+
+Some products have multiple offers with different prices (common for refurbished items). Configure which offer to track:
+
+```yaml
+extraction:
+  json_ld:
+    offer_selection_strategy: "first"  # Options: "first", "cheapest", "cheapest_available"
+```
+
+**Strategies**:
+
+- `first` (default) - Most reliable, tracks first offer in array
+- `cheapest` - Lowest price regardless of availability
+- `cheapest_available` - Lowest price that's in stock
+
+**Important: Strategy Locking**
+
+Once a product is tracked, the strategy is **locked in the database** to prevent fake price changes. If you change the strategy in the config later, Price Scout will warn you but continue using the locked strategy.
+
+**Example**: Refurbished products
+
+```yaml
+# Store-A often has 3 refurbished condition tiers
+name: "storae-a"
+extraction:
+  json_ld:
+    offer_selection_strategy: "first"  # Track "Excellent" condition (highest price)
+```
+
+**To change strategy for a tracked product**:
+
+1. Delete all snapshots for that URL
+1. Delete the tracked_pages entry
+1. Re-track the URL (new strategy will be locked)
+
+See README.md section "Handling Multi-Offer Products" for detailed explanation and best practices.
+
+## CSS/XPath Selectors
+
+For sites without JSON-LD or when you need precise control, use CSS or XPath selectors:
+
+```yaml
+extraction:
+  priority: ["selectors"]  # or ["json-ld", "selectors"] for fallback
+
+  css_selectors:
+    # Basic CSS selector
+    name:
+      - selector: "#productTitle"
+
+    # Multiple fallbacks (first match wins)
+    price:
+      - selector: "span.a-price span.a-offscreen"
+      - selector: "#priceblock_ourprice"
+      - selector: ".product-price"
+
+    # With regex extraction and replacement
+    price:
+      - selector: "span.price"
+        regex_extract: '€?\s*([\d.,]+)'  # Extract "14,44" from "€ 14,44"
+        regex_replace:
+          pattern: ','                     # Convert European comma to period
+          replacement: '.'                 # Result: "14.44"
+
+    # XPath for complex queries
+    brand:
+      - selector: "//th[contains(text(), 'Brand')]/following-sibling::td"
+        type: "xpath"
+
+    # Extract attribute value
+    image:
+      - selector: "#mainImage"
+        attribute: "src"                   # Get src attribute value
+
+    # Wait for dynamic content
+    price:
+      - selector: "span.dynamic-price"
+        wait_for: true                     # Wait for element to appear
+        wait_timeout: 5000                 # Max 5 seconds
+
+    # Check element state (for availability)
+    availability:
+      - selector: "#add-to-cart-button"
+        check_exists: true                 # Element exists in DOM
+        check_visible: true                # Element is visible
+        check_not_disabled: true           # Element is not disabled
+
+    # Extract multiple elements (array)
+    images:
+      - selector: "img.product-image"
+        attribute: "src"
+        multiple: true                     # Returns array of all matches
+
+    # Text extraction modes
+    description:
+      - selector: "#product-description"
+        text_mode: "inner_text"           # Only visible text (default)
+      - selector: "#product-description"
+        text_mode: "text_content"         # All text including hidden
+      - selector: "#product-description"
+        text_mode: "full_html"            # Full HTML content
+```
+
+### CSS Selector Features
+
+| Feature                  | Description                       | Example                         |
+| ------------------------ | --------------------------------- | ------------------------------- |
+| **Multiple Fallbacks**   | Try selectors in order            | `price: [sel1, sel2, sel3]`     |
+| **Regex Extract**        | Extract pattern from text         | `regex_extract: '([\d.,]+)'`    |
+| **Regex Replace**        | Replace pattern in extracted text | `pattern: ',' replacement: '.'` |
+| **XPath Support**        | Use XPath instead of CSS          | `type: "xpath"`                 |
+| **Attribute Extraction** | Get attribute value               | `attribute: "src"`              |
+| **Wait for Element**     | Wait for dynamic content          | `wait_for: true`                |
+| **State Checking**       | Check visibility/disabled state   | `check_visible: true`           |
+| **Multiple Elements**    | Extract array of elements         | `multiple: true`                |
+| **Text Modes**           | Control text extraction           | `text_mode: "inner_text"`       |
+
+### When to Use CSS vs JSON-LD
+
+**Use JSON-LD** (preferred):
+
+- Site has Schema.org structured data
+- More reliable, less likely to break
+- Self-documenting data structure
+
+**Use CSS Selectors**:
+
+- No JSON-LD available
+- Need precise control over extraction
+- Site has non-standard data structure
+
+**Hybrid Approach** (both):
+
+```yaml
+extraction:
+  priority: ["json-ld", "selectors"]  # Try JSON-LD first, fallback to selectors
+```
 
 ## Transformations
 
@@ -117,14 +257,6 @@ Control page loading behavior:
 wait_strategy: "domcontentloaded"  # Options: load, domcontentloaded, networkidle
 wait_delay: 2  # Additional wait time in seconds after page load
 ```
-
-## Examples
-
-**Simple config**: `jumbo.yaml` - Basic setup with minimal transformations
-
-**Complex config**: `albert-heijn.yaml` - Advanced transformations and field mappings
-
-**Field mappings reference**: `config-field_mappings.yaml` - Comprehensive field mapping examples
 
 ## Testing Your Config
 

@@ -5,6 +5,156 @@ All notable changes to Price Scout will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [unreleased]
+
+### Changed
+
+- **BREAKING**: Basket comparison command moved from `scout groups basket` to `scout compare groups`
+
+  - Improved command structure with extensibility for future compare subcommands
+  - Example: `scout compare groups --name "Coffee" --name "Milk"` (replaces `scout groups basket --groups "Coffee,Milk"`)
+  - See migration guide below for details
+
+- **BREAKING**: Changed `--groups` comma-separated list to repeatable `--name` flag
+
+  - Better UX for long group names (no escaping needed)
+  - Shell-friendly with familiar pattern (like docker `-v`)
+  - Short flag alias: `-n`
+  - Example: `scout compare groups -n "SONY PlayStation 5" -n "Weekend Groceries"`
+
+- **BREAKING**: Removed `--include-unavailable` flag - unavailable products always shown
+
+  - Unavailable products now appear in all output sections with clear status markers
+  - Unavailable products excluded from price calculations (total cost, category subtotals)
+  - "Unavailable" column added to Provider Totals table
+  - Products marked with "OUT" status in Product Breakdown
+  - More transparent and accurate cost calculations
+
+- **Dependencies**: Updated Python packages to latest compatible versions
+
+  - Updated `beautifulsoup4` from 4.12.2 to 4.14.2
+  - Updated `chalkbox` from 2.1.1 to 2.2.0
+  - Updated `click` from 8.1.7 to 8.3.1
+  - Updated `pydantic` from 2.12.4 to 2.12.5
+  - Updated `PyYAML` from 6.0.1 to 6.0.3
+  - Updated `requests` from 2.31.0 to 2.32.5
+  - Updated `selectolax` from 0.4.0 to 0.4.2
+
+### Migration Guide
+
+**Old command:**
+
+```bash
+scout groups basket --groups "Group1,Group2,Group3"
+```
+
+**New command:**
+
+```bash
+scout compare groups --name "Group1" --name "Group2" --name "Group3"
+```
+
+**What changed:**
+
+1. Command moved: `groups basket` → `compare groups`
+1. Argument changed: `--groups "A,B"` → `--name "A" --name "B"`
+1. Unavailable products now always shown (removed `--include-unavailable` flag)
+
+## [0.9.0b1] - 2025-11-22
+
+### Changed
+
+- **Multi-Offer Strategy Locking**: Price history integrity for products
+
+  - Prevents fake price changes when config changes
+  - Strategy locked in database after first snapshot
+  - Three strategies: `first` (default), `cheapest`, `cheapest_available`
+  - Warns when locked strategy differs from config
+  - Database migration script included
+  - Comprehensive documentation in code and README
+  - 100% backwards compatible (existing products unaffected)
+
+- **Formal Migration System**: Laravel-style database migrations
+
+  - Numbered migration files (0001\_*, 0002\_*, etc.) in `scripts/migrations/`
+  - Version tracking in `schema_migrations` table
+  - CLI commands: `scout db migrate apply/status/rollback`
+  - Checksum verification (SHA256) to detect modified migrations
+  - Dry-run support for testing migrations safely
+  - Rollback support with `down()` functions
+  - Backwards compatibility via `check_applied()` functions
+  - Detailed documentation in `docs/MIGRATIONS.md`
+
+- **Docker Auto-Migration**: Zero-config database migrations
+
+  - Automatic migration application on container startup
+  - Timestamped backups before each migration run
+  - Fail-safe container startup (aborts if migrations fail)
+  - Colored output for clear status visibility
+  - Manual override available via CLI commands
+  - Backup management with cleanup instructions
+  - Full logging of migration process
+
+- **CSS/XPath Selector Extraction**: Fallback for sites without JSON-LD
+
+  - Full CSS selector support with advanced features
+  - XPath selector support for complex DOM queries
+  - Multiple selector fallbacks per field (first match wins)
+  - Regex extraction and replacement per selector
+  - Text mode control (inner_text, text_content, full_html)
+  - Attribute extraction (src, href, data-\*, etc.)
+  - Wait-for-selector with configurable timeout
+  - Visibility and disabled state checking
+  - Multiple element extraction (arrays)
+  - Amazon.nl provider implementation with 30+ selectors
+  - Comprehensive inline documentation and examples
+
+### Database Migration Required
+
+**For existing installations**, database schema updates are required for new features.
+
+#### Migration Methods
+
+**Docker installations** (AUTOMATIC):
+
+- Migrations run automatically on container startup
+- Automatic backup created before applying migrations
+- No manual action required
+- Check container logs for migration status
+
+**Local/PyPI installations** (MANUAL):
+
+```bash
+# Check migration status
+scout db migrate status
+
+# Apply pending migrations
+scout db migrate apply
+```
+
+#### What Migrations Do
+
+**Migration 001: Add offer_selection_strategy column**
+
+- Adds `offer_selection_strategy` column to `tracked_pages` table
+- Enables multi-offer strategy locking feature
+- Existing products remain unaffected (NULL values use config-based selection)
+
+#### Backwards Compatibility
+
+- All migrations are **100% safe** - no data loss or price history corruption
+- Existing tracked products continue using config-based strategy selection (defaults to "first")
+- Fresh installs include all schema changes automatically (no migration needed)
+- Idempotent: Safe to run multiple times
+
+#### Skip Migrations If
+
+- Fresh install (v0.8.5b1 or later)
+- No existing tracked products in database
+- Docker installation (auto-applies on startup)
+
+See `docs/MIGRATIONS.md` for comprehensive migration guide, backup procedures, and rollback instructions.
+
 ## [0.8.5b1] - 2025-11-13
 
 ### Beta Release - Pre-v1.0 Polish & Refinements
