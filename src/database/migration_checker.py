@@ -24,6 +24,7 @@ MIGRATION_EXEMPT_COMMANDS: frozenset[str | None] = frozenset(
     }
 )
 
+
 @dataclass
 class MigrationStatus:
     """Result of migration check."""

@@ -1,4 +1,3 @@
-
 from src.database.db_manager import DatabaseManager
 from src.price_tracker.persistence import persist_scrape_result
 from src.providers.base_product import BaseProduct

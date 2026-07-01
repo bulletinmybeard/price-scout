@@ -56,7 +56,9 @@ def config_init(config_path: str | None, force: bool):
 
         show_info("Configuration initialized", details=str(target))
         if get_user_directory().exists():
-            console.print(f"[dim]Provider configs: {get_user_directory() / 'provider_configs'}[/dim]")
+            console.print(
+                f"[dim]Provider configs: {get_user_directory() / 'provider_configs'}[/dim]"
+            )
         console.print("[dim]Review and customize your config before tracking products.[/dim]")
 
     except click.Abort:
