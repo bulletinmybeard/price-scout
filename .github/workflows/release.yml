@@ -48,6 +48,7 @@ jobs:
           fetch-depth: 0  # Fetch all history for changelog
 
       - name: Set up Python
+        id: setup-python
         uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
@@ -177,118 +178,113 @@ jobs:
           VERSION="${VERSION#v}"
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
-      - name: Generate comprehensive release notes
+      - name: Generate release notes
         id: changelog
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          TAG: ${{ steps.tag.outputs.name }}
+          REPO: ${{ github.repository }}
+          DOCKER_IMAGE: ${{ env.DOCKER_IMAGE }}
         run: |
-          VERSION="${{ steps.version.outputs.version }}"
-          TAG="${{ steps.tag.outputs.name }}"
-          REPO="${{ github.repository }}"
-          DOCKER_IMAGE="${{ env.DOCKER_IMAGE }}"
+          # Flag-based extraction: print lines between "## [VERSION]" and the
+          # next "## [" header, excluding both. A range expression (/a/,/b/)
+          # breaks here because the header line matches both patterns and
+          # collapses the range to one line.
+          CHANGELOG_SECTION=$(awk -v hdr="## [${VERSION}]" 'index($0, hdr) == 1 {found=1; next} /^## \[/{found=0} found' CHANGELOG.md || echo "")
+          echo "DEBUG: extracted changelog length: ${#CHANGELOG_SECTION}"
 
-          # Extract CHANGELOG section for this version
-          CHANGELOG_SECTION=$(awk "/^## \[$VERSION\]/,/^## \[/" CHANGELOG.md | grep -v "^## \[" | sed '/^$/d' || echo "")
+          HAS_BREAKING_CHANGES=false
+          if [ -n "$CHANGELOG_SECTION" ] && echo "$CHANGELOG_SECTION" | grep -qi "breaking change"; then
+            HAS_BREAKING_CHANGES=true
+          fi
 
-          # Detect breaking changes
-          HAS_BREAKING_CHANGES=$(echo "$CHANGELOG_SECTION" | grep -i "breaking change" > /dev/null && echo "true" || echo "false")
-
-          # Extract breaking changes section if exists
           BREAKING_CHANGES=$(echo "$CHANGELOG_SECTION" | awk '/### Breaking Changes/,/^### [^B]/' | grep -v "^###" || echo "")
-
-          # Read checksums
           CHECKSUMS=$(cat dist/checksums.txt || echo "")
 
-          # Get wheel and tarball filenames
-          WHEEL_FILE=$(ls dist/*.whl | xargs basename)
-          TARBALL_FILE=$(ls dist/*.tar.gz | xargs basename)
+          # Docker tags omit the v prefix (e.g. 1.2.0b1 not v1.2.0b1)
+          DOCKER_TAG="${TAG#v}"
 
-          # Create comprehensive release notes
-          cat > release_notes.md <<RELEASE_NOTES_EOF
-          ## Installation
+          if [ -n "$CHANGELOG_SECTION" ] && [ "${#CHANGELOG_SECTION}" -gt 10 ]; then
+            {
+              echo "## Installation"
+              echo ""
+              echo "### Docker (Recommended)"
+              echo ""
+              echo '```bash'
+              echo "docker pull ${DOCKER_IMAGE}:${DOCKER_TAG}"
+              echo "docker run -d --name price-scout \\"
+              echo "  -p 4213:4214 \\"
+              echo "  -v price-scout-data:/app/data \\"
+              echo "  ${DOCKER_IMAGE}:${DOCKER_TAG}"
+              echo '```'
+              echo ""
+              echo "### Python Package"
+              echo ""
+              echo '```bash'
+              echo "pip install price-scout==${VERSION}"
+              echo '```'
+              echo ""
+              echo "## Distribution Links"
+              echo ""
+              echo "| Platform | Link |"
+              echo "|----------|------|"
+              echo "| **PyPI** | [price-scout v${VERSION}](https://pypi.org/project/price-scout/${VERSION}/) |"
+              echo "| **Docker Hub** | [${DOCKER_IMAGE}:${DOCKER_TAG}](https://hub.docker.com/r/${DOCKER_IMAGE}/tags) |"
+              echo "| **Documentation** | [README](https://github.com/${REPO}#readme) |"
+              echo "| **Changelog** | [CHANGELOG.md](https://github.com/${REPO}/blob/master/CHANGELOG.md) |"
+              echo ""
+              echo "## What's Changed"
+              echo ""
+              printf '%s\n' "$CHANGELOG_SECTION"
+            } > release_notes.md
 
-          ### Docker (Recommended)
+            if [ "$HAS_BREAKING_CHANGES" = "true" ]; then
+              {
+                echo ""
+                echo "## Upgrade Notes"
+                echo ""
+                echo "This release contains breaking changes. Please review before upgrading:"
+                echo ""
+                printf '%s\n' "$BREAKING_CHANGES"
+              } >> release_notes.md
+            fi
 
-          \`\`\`bash
-          docker pull ${DOCKER_IMAGE}:${TAG}
-          docker run -d --name price-scout \\
-            -p 4213:4214 \\
-            -v price-scout-data:/app/data \\
-            ${DOCKER_IMAGE}:${TAG}
-          \`\`\`
+            {
+              echo ""
+              echo "## Package Checksums (SHA256)"
+              echo ""
+              echo "| File | SHA256 |"
+              echo "|------|--------|"
+            } >> release_notes.md
 
-          ### Python Package
+            echo "$CHECKSUMS" | while read -r hash filename; do
+              [ -n "$hash" ] && echo "| \`${filename}\` | \`${hash}\` |" >> release_notes.md
+            done
 
-          \`\`\`bash
-          pip install price-scout==${VERSION}
-          \`\`\`
-
-          ## Distribution Links
-
-          | Platform | Link |
-          |----------|------|
-          | **PyPI** | [price-scout v${VERSION}](https://pypi.org/project/price-scout/${VERSION}/) |
-          | **Docker Hub** | [${DOCKER_IMAGE}:${TAG}](https://hub.docker.com/r/${DOCKER_IMAGE}/tags) |
-          | **Documentation** | [README](https://github.com/${REPO}#readme) |
-
-          ## What's Changed
-
-          ${CHANGELOG_SECTION}
-
-          RELEASE_NOTES_EOF
-
-          # Add upgrade notes if breaking changes detected
-          if [ "$HAS_BREAKING_CHANGES" = "true" ]; then
-            cat >> release_notes.md <<UPGRADE_NOTES_EOF
-
-          ## Upgrade Notes
-
-          This release contains breaking changes. Please review before upgrading:
-
-          ${BREAKING_CHANGES}
-
-          UPGRADE_NOTES_EOF
+            {
+              echo ""
+              echo "## Assets"
+              echo ""
+              echo "This release includes:"
+              echo "- **Python Wheel** (\`.whl\`) - Universal wheel for all platforms"
+              echo "- **Source Distribution** (\`.tar.gz\`) - Complete source code with all files"
+              echo ""
+              echo "---"
+              echo ""
+              echo "**Full Changelog**: https://github.com/${REPO}/blob/master/CHANGELOG.md"
+              echo ""
+              echo "**First time using Price Scout?** Check out the [Quick Start Guide](https://github.com/${REPO}#quick-start-recommended-docker)"
+            } >> release_notes.md
+          else
+            {
+              echo "## Release ${VERSION}"
+              echo ""
+              echo "See the full changelog: https://github.com/${REPO}/blob/master/CHANGELOG.md"
+            } > release_notes.md
           fi
 
-          # Add checksums section
-          cat >> release_notes.md <<'CHECKSUMS_EOF'
-
-          ## Package Checksums (SHA256)
-
-          | File | SHA256 |
-          |------|--------|
-          CHECKSUMS_EOF
-
-          # Format checksums as table rows
-          echo "$CHECKSUMS" | while read hash filename; do
-            echo "| \`$filename\` | \`$hash\` |" >> release_notes.md
-          done
-
-          # Add footer
-          cat >> release_notes.md <<FOOTER_EOF
-
-          ## Assets
-
-          This release includes:
-          - **Python Wheel** (\`.whl\`) - Universal wheel for all platforms
-          - **Source Distribution** (\`.tar.gz\`) - Complete source code with all files
-
-          ---
-
-          **Full Changelog**: https://github.com/${REPO}/blob/master/CHANGELOG.md
-
-          **First time using Price Scout?** Check out the [Quick Start Guide](https://github.com/${REPO}#quick-start-recommended-docker)
-          FOOTER_EOF
-
-          # Handle fallback if no CHANGELOG section found
-          if [ -z "$CHANGELOG_SECTION" ]; then
-            echo "" > release_notes.md
-            cat > release_notes.md <<FALLBACK_EOF
-          ## Release Notes
-
-          Release version ${VERSION}
-
-          See full changelog at: https://github.com/${REPO}/blob/master/CHANGELOG.md
-          FALLBACK_EOF
-          fi
+          echo "DEBUG: final release notes:"
+          cat release_notes.md
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2

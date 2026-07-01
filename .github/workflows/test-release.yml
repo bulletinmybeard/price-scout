@@ -26,6 +26,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Set up Python
+        id: setup-python
         uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
@@ -66,6 +67,19 @@ jobs:
       - name: Build package
         run: |
           poetry build
+
+      - name: Verify CHANGELOG section for release version
+        run: |
+          VERSION=$(poetry version -s)
+          CHANGELOG_SECTION=$(awk -v hdr="## [${VERSION}]" 'index($0, hdr) == 1 {found=1; next} /^## \[/{found=0} found' CHANGELOG.md || echo "")
+          echo "Checking CHANGELOG section for version ${VERSION}"
+          echo "Extracted length: ${#CHANGELOG_SECTION}"
+          if [ -z "$CHANGELOG_SECTION" ] || [ "${#CHANGELOG_SECTION}" -le 10 ]; then
+            echo "ERROR: No CHANGELOG section found for version ${VERSION}"
+            echo "Add a '## [${VERSION}]' section to CHANGELOG.md before releasing."
+            exit 1
+          fi
+          echo "CHANGELOG section OK"
 
       - name: Verify package contents
         run: |
