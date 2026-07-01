@@ -97,8 +97,8 @@ class PriceComparator:
         Raises:
             ValueError: If group_names is empty or contains fewer than 1 group
         """
-        if not group_names or len(group_names) < 1:
-            raise ValueError("At least 1 product group required for basket comparison")
+        if not group_names or len(group_names) < 2:
+            raise ValueError("At least 2 product groups required for basket comparison")
 
         logger.debug(f"Comparing basket across {len(group_names)} groups: {group_names}")
 

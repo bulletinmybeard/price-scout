@@ -4,21 +4,16 @@ from src.price_tracker.scraping_worker import scrape_single_url
 
 
 class TestGroupFlag:
-    """Test suite for --group flag functionality."""
+    """Test suite for --group flag delegation through scraping_worker."""
 
-    def test_scrape_single_url_with_group(self, mock_tracker, mock_factory, mock_db_manager):
-        """Test that group is created and associated when --group flag is used."""
+    def test_scrape_single_url_with_group(self, mock_tracker, mock_factory):
+        """Test that --group is passed to tracker with auto-association disabled."""
         url = "https://www.store-a.example/test-product"
         group_name = "Test Group"
 
-        with (
-            patch(
-                "src.price_tracker.scraping_worker.detect_provider_from_url",
-                return_value=("store_a", {}),
-            ),
-            patch(
-                "src.price_tracker.scraping_worker.DatabaseManager", return_value=mock_db_manager
-            ),
+        with patch(
+            "src.price_tracker.scraping_worker.detect_provider_from_url",
+            return_value=("store_a", {}),
         ):
             result = scrape_single_url(
                 url=url,
@@ -31,24 +26,21 @@ class TestGroupFlag:
 
         assert result[0] == "scraped"
         assert result[1] == url
+        mock_tracker.track_product_url.assert_called_once_with(
+            url,
+            "store_a",
+            track_to_db=True,
+            group_name=group_name,
+            auto_associate_groups=False,
+        )
 
-        mock_db_manager.create_group.assert_called_once_with(name=group_name)
-
-        mock_db_manager.add_page_to_group.assert_called_once_with(page_id=1, group_id=1)
-
-    def test_scrape_single_url_without_group(self, mock_tracker, mock_factory, mock_db_manager):
-        """Test that no group is created when --group flag is not used."""
+    def test_scrape_single_url_without_group(self, mock_tracker, mock_factory):
+        """Test that auto-association is enabled when --group is not used."""
         url = "https://www.store-a.example/test-product"
 
-        with (
-            patch(
-                "src.price_tracker.scraping_worker.detect_provider_from_url",
-                return_value=("store_a", {}),
-            ),
-            patch(
-                "src.price_tracker.scraping_worker.DatabaseManager", return_value=mock_db_manager
-            ),
-            patch("src.price_tracker.scraping_worker.auto_associate_with_groups", return_value=[]),
+        with patch(
+            "src.price_tracker.scraping_worker.detect_provider_from_url",
+            return_value=("store_a", {}),
         ):
             result = scrape_single_url(
                 url=url,
@@ -61,94 +53,50 @@ class TestGroupFlag:
 
         assert result[0] == "scraped"
         assert result[1] == url
-
-        assert mock_db_manager.add_page_to_group.call_count == 0, (
-            "Should not associate when no group specified"
+        mock_tracker.track_product_url.assert_called_once_with(
+            url,
+            "store_a",
+            track_to_db=True,
+            group_name=None,
+            auto_associate_groups=True,
         )
 
-    def test_scrape_single_url_group_creation_failure(
-        self, mock_tracker, mock_factory, mock_db_manager
-    ):
-        """Test that group creation failure doesn't break tracking."""
-        url = "https://www.store-a.example/test-product"
-        group_name = "Test Group"
-
-        mock_db_manager.create_group.side_effect = Exception("Database error")
-
-        with (
-            patch(
-                "src.price_tracker.scraping_worker.detect_provider_from_url",
-                return_value=("store_a", {}),
-            ),
-            patch(
-                "src.price_tracker.scraping_worker.DatabaseManager", return_value=mock_db_manager
-            ),
-        ):
-            result = scrape_single_url(
-                url=url,
-                tracker=mock_tracker,
-                factory=mock_factory,
-                check=False,
-                db_url=":memory:",
-                group_name=group_name,
-            )
-
-        assert result[0] == "scraped"
-        assert result[1] == url
-
-        mock_db_manager.add_page_to_group.assert_not_called()
-
-    def test_scrape_single_url_check_mode_ignores_group(
-        self, mock_tracker, mock_factory, mock_db_manager
-    ):
+    def test_scrape_single_url_check_mode_ignores_group(self, mock_tracker, mock_factory):
+        """Test that check mode fetches only and does not persist or associate groups."""
         url = "https://www.store-a.example/test-product"
         group_name = "Test Group"
 
         mock_product = MagicMock()
         mock_product.name = "Test Product"
+        mock_product.current_price = 9.99
         mock_tracker.fetch_product_only.return_value = mock_product
 
-        with (
-            patch(
-                "src.price_tracker.scraping_worker.detect_provider_from_url",
-                return_value=("store_a", {}),
-            ),
-            patch(
-                "src.price_tracker.scraping_worker.DatabaseManager", return_value=mock_db_manager
-            ),
+        with patch(
+            "src.price_tracker.scraping_worker.detect_provider_from_url",
+            return_value=("store_a", {}),
         ):
             result = scrape_single_url(
                 url=url,
                 tracker=mock_tracker,
                 factory=mock_factory,
-                check=True,  # Check mode
+                check=True,
                 db_url=":memory:",
                 group_name=group_name,
             )
 
         assert result[0] == "scraped"
         assert result[1] == url
+        mock_tracker.fetch_product_only.assert_called_once_with(url, "store_a")
+        mock_tracker.track_product_url.assert_not_called()
 
-        mock_db_manager.create_group.assert_not_called()
-        mock_db_manager.add_page_to_group.assert_not_called()
-
-    def test_group_takes_priority_over_config(self, mock_tracker, mock_factory, mock_db_manager):
-        """Test that --group flag takes priority over config.yaml auto-association."""
+    def test_group_takes_priority_over_config(self, mock_tracker, mock_factory):
+        """Test that --group disables config-based auto-association."""
         url = "https://www.store-a.example/test-product"
         group_name = "CLI Group"
 
-        with (
-            patch(
-                "src.price_tracker.scraping_worker.detect_provider_from_url",
-                return_value=("store_a", {}),
-            ),
-            patch(
-                "src.price_tracker.scraping_worker.DatabaseManager", return_value=mock_db_manager
-            ),
-            patch(
-                "src.price_tracker.scraping_worker.auto_associate_with_groups",
-                return_value=["Config Group"],
-            ) as mock_auto_associate,
+        with patch(
+            "src.price_tracker.scraping_worker.detect_provider_from_url",
+            return_value=("store_a", {}),
         ):
             result = scrape_single_url(
                 url=url,
@@ -160,55 +108,22 @@ class TestGroupFlag:
             )
 
         assert result[0] == "scraped"
+        mock_tracker.track_product_url.assert_called_once_with(
+            url,
+            "store_a",
+            track_to_db=True,
+            group_name=group_name,
+            auto_associate_groups=False,
+        )
 
-        mock_db_manager.create_group.assert_called_once_with(name="CLI Group")
-
-        mock_auto_associate.assert_not_called()
-
-    def test_group_name_with_special_characters(self, mock_tracker, mock_factory, mock_db_manager):
-        """Test that group names with special characters work correctly."""
+    def test_group_name_with_special_characters(self, mock_tracker, mock_factory):
+        """Test that group names with special characters are passed through."""
         url = "https://www.store-a.example/test-product"
         group_name = "Weekly Groceries - Store-A (2024)"
 
-        with (
-            patch(
-                "src.price_tracker.scraping_worker.detect_provider_from_url",
-                return_value=("store_a", {}),
-            ),
-            patch(
-                "src.price_tracker.scraping_worker.DatabaseManager", return_value=mock_db_manager
-            ),
-        ):
-            result = scrape_single_url(
-                url=url,
-                tracker=mock_tracker,
-                factory=mock_factory,
-                check=False,
-                db_url=":memory:",
-                group_name=group_name,
-            )
-
-        mock_db_manager.create_group.assert_called_once_with(name=group_name)
-
-        assert result[0] == "scraped"
-
-    def test_group_association_when_page_not_found(
-        self, mock_tracker, mock_factory, mock_db_manager
-    ):
-        """Test group association handles missing tracked page gracefully."""
-        url = "https://www.store-a.example/test-product"
-        group_name = "Test Group"
-
-        mock_db_manager.get_tracked_page.return_value = None
-
-        with (
-            patch(
-                "src.price_tracker.scraping_worker.detect_provider_from_url",
-                return_value=("store_a", {}),
-            ),
-            patch(
-                "src.price_tracker.scraping_worker.DatabaseManager", return_value=mock_db_manager
-            ),
+        with patch(
+            "src.price_tracker.scraping_worker.detect_provider_from_url",
+            return_value=("store_a", {}),
         ):
             result = scrape_single_url(
                 url=url,
@@ -220,29 +135,26 @@ class TestGroupFlag:
             )
 
         assert result[0] == "scraped"
-
-        mock_db_manager.create_group.assert_called_once()
-
-        mock_db_manager.add_page_to_group.assert_not_called()
+        mock_tracker.track_product_url.assert_called_once_with(
+            url,
+            "store_a",
+            track_to_db=True,
+            group_name=group_name,
+            auto_associate_groups=False,
+        )
 
 
 class TestGroupFlagEdgeCases:
     """Edge case tests for --group flag."""
 
-    def test_empty_group_name(self, mock_tracker, mock_factory, mock_db_manager):
-        """Test that empty group name is handled gracefully."""
+    def test_empty_group_name(self, mock_tracker, mock_factory):
+        """Test that empty group name disables explicit association."""
         url = "https://www.store-a.example/test-product"
         group_name = ""
 
-        with (
-            patch(
-                "src.price_tracker.scraping_worker.detect_provider_from_url",
-                return_value=("store_a", {}),
-            ),
-            patch(
-                "src.price_tracker.scraping_worker.DatabaseManager", return_value=mock_db_manager
-            ),
-            patch("src.price_tracker.scraping_worker.auto_associate_with_groups", return_value=[]),
+        with patch(
+            "src.price_tracker.scraping_worker.detect_provider_from_url",
+            return_value=("store_a", {}),
         ):
             result = scrape_single_url(
                 url=url,
@@ -254,22 +166,22 @@ class TestGroupFlagEdgeCases:
             )
 
         assert result[0] == "scraped"
+        mock_tracker.track_product_url.assert_called_once_with(
+            url,
+            "store_a",
+            track_to_db=True,
+            group_name=group_name,
+            auto_associate_groups=False,
+        )
 
-        mock_db_manager.create_group.assert_not_called()
-
-    def test_whitespace_group_name(self, mock_tracker, mock_factory, mock_db_manager):
-        """Test that whitespace-only group name is treated as valid."""
+    def test_whitespace_group_name(self, mock_tracker, mock_factory):
+        """Test that whitespace-only group name is passed through."""
         url = "https://www.store-a.example/test-product"
         group_name = "   "
 
-        with (
-            patch(
-                "src.price_tracker.scraping_worker.detect_provider_from_url",
-                return_value=("store_a", {}),
-            ),
-            patch(
-                "src.price_tracker.scraping_worker.DatabaseManager", return_value=mock_db_manager
-            ),
+        with patch(
+            "src.price_tracker.scraping_worker.detect_provider_from_url",
+            return_value=("store_a", {}),
         ):
             result = scrape_single_url(
                 url=url,
@@ -281,5 +193,10 @@ class TestGroupFlagEdgeCases:
             )
 
         assert result[0] == "scraped"
-
-        mock_db_manager.create_group.assert_called_once_with(name=group_name)
+        mock_tracker.track_product_url.assert_called_once_with(
+            url,
+            "store_a",
+            track_to_db=True,
+            group_name=group_name,
+            auto_associate_groups=False,
+        )

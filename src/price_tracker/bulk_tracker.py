@@ -18,6 +18,7 @@ from src.cli.helpers import (
     get_console,
     get_db_url,
     get_display_name_for_url,
+    get_max_parallel_workers,
 )
 from src.cli.progress_components import CurrentProductColumn
 from src.database.db_manager import DatabaseManager
@@ -117,7 +118,7 @@ class BulkTracker:
     def _track_parallel_json_mode(
         self, urls_to_scrape: list[str], group_name: str | None, results: list
     ) -> list[tuple[str, str, Any]]:
-        max_workers = max(1, min(len(urls_to_scrape), 3))
+        max_workers = max(1, min(len(urls_to_scrape), get_max_parallel_workers()))
         db_url = get_db_url()
 
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
@@ -220,7 +221,7 @@ class BulkTracker:
             try:
                 total_completed = 0
 
-                max_workers = max(1, min(len(urls_to_scrape), 3))
+                max_workers = max(1, min(len(urls_to_scrape), get_max_parallel_workers()))
                 db_url = get_db_url()
 
                 with ThreadPoolExecutor(max_workers=max_workers) as executor:

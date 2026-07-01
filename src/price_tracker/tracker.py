@@ -4,8 +4,8 @@ from typing import Any
 from chalkbox.logging.bridge import get_logger
 
 from src.database.db_manager import DatabaseManager
+from src.price_tracker.persistence import persist_scrape_result
 from src.providers import get_factory
-from src.utils.datetime_utils import now_in_configured_tz
 
 logger = get_logger(__name__)
 
@@ -55,12 +55,32 @@ class PriceTracker:
             return None
 
     def track_product_url(
-        self, url: str, provider_name: str, track_to_db: bool = True
+        self,
+        url: str,
+        provider_name: str,
+        track_to_db: bool = True,
+        *,
+        group_name: str | None = None,
+        auto_associate_groups: bool = False,
     ) -> tuple[Any, dict | None]:
-        return asyncio.run(self._track_product_url_async(url, provider_name, track_to_db))
+        return asyncio.run(
+            self._track_product_url_async(
+                url,
+                provider_name,
+                track_to_db,
+                group_name=group_name,
+                auto_associate_groups=auto_associate_groups,
+            )
+        )
 
     async def _track_product_url_async(
-        self, url: str, provider_name: str, track_to_db: bool = True
+        self,
+        url: str,
+        provider_name: str,
+        track_to_db: bool = True,
+        *,
+        group_name: str | None = None,
+        auto_associate_groups: bool = False,
     ) -> tuple[Any, dict | None]:
         logger.debug(f"Tracking product from: {url}")
 
@@ -77,49 +97,17 @@ class PriceTracker:
                     await asyncio.sleep(BACKGROUND_CLEANUP_DELAY)
                     return product_data, None
 
-                snapshot_data = {
-                    "url": url,
-                    "provider": provider_name,
-                    "name": product_data.name,
-                    "brand": product_data.brand,
-                    "current_price": float(product_data.current_price)
-                    if product_data.current_price
-                    else None,
-                    "original_price": float(product_data.original_price)
-                    if product_data.original_price
-                    else None,
-                    "currency": product_data.currency,
-                    "availability": product_data.availability,
-                    "is_marketplace_only": product_data.is_marketplace_only,
-                    "availability_text": product_data.availability_text,
-                    "has_promotion": product_data.has_promotion,
-                    "discount_percentage": product_data.discount_percentage,
-                    "promotion_starts_at": product_data.promotion_starts_at,
-                    "promotion_ends_at": product_data.promotion_ends_at,
-                    "sku": product_data.sku,
-                    "gtin": product_data.gtin,
-                    "image_url": product_data.image,
-                    "description": product_data.description,
-                    "category": product_data.category,  # JSON field, pass list directly
-                    "weight": product_data.weight,
-                    "extraction_method": product_data.extraction_method,
-                    "scraped_at": now_in_configured_tz(),
-                }
-
-                snapshot_id = self.db_manager.add_snapshot(snapshot_data)
-
-                db_result = {
-                    "snapshot_id": snapshot_id,
-                    "product_name": product_data.name,
-                    "provider": provider_name,
-                    "price": product_data.current_price,
-                    "currency": product_data.currency,
-                    "is_available": product_data.availability,
-                    "scraped_at": now_in_configured_tz(),
-                }
+                db_result = persist_scrape_result(
+                    self.db_manager,
+                    product_data,
+                    provider_name,
+                    group_name=group_name,
+                    auto_associate_groups=auto_associate_groups,
+                )
 
                 logger.debug(
-                    f"Successfully tracked: {product_data.name} @ {provider_name} - {product_data.currency} {product_data.current_price}"
+                    f"Successfully tracked: {product_data.name} @ {provider_name} - "
+                    f"{product_data.currency} {product_data.current_price}"
                 )
                 await asyncio.sleep(BACKGROUND_CLEANUP_DELAY)
                 return product_data, db_result

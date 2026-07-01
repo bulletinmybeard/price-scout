@@ -11,7 +11,7 @@ from src.database.migration_runner import MigrationRunner
 def test_is_command_exempt_for_db_and_help():
     assert is_command_exempt(None) is True
     assert is_command_exempt("db") is True
-    assert is_command_exempt("db", "migrate") is True
+    assert is_command_exempt("config") is True
     assert is_command_exempt("track") is False
 
 

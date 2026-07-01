@@ -19,18 +19,10 @@ logger = get_logger(__name__)
 MIGRATION_EXEMPT_COMMANDS: frozenset[str | None] = frozenset(
     {
         "db",  # Parent command for migrate subcommands
+        "config",  # Setup without requiring migrated schema
         None,  # No subcommand (shows help)
     }
 )
-
-# Subcommands under 'db' that are always allowed
-MIGRATION_EXEMPT_DB_SUBCOMMANDS: frozenset[str] = frozenset(
-    {
-        "migrate",
-        "init",
-    }
-)
-
 
 @dataclass
 class MigrationStatus:
@@ -57,7 +49,7 @@ def check_migrations_required(
     3. Database exists, schema_migrations exists, no pending: Allow
     4. Database exists, schema_migrations exists, pending migrations: Block
 
-    For the upgrade path (scenario 2), running `scout db migrate apply` will:
+    For the upgrade path (scenario 2), running `price-scout db migrate apply` will:
     - Create the schema_migrations table
     - Auto-detect already-applied migrations via check_applied() functions
     - Only apply genuinely pending migrations
@@ -148,21 +140,18 @@ To apply migrations:
      cp {db_path} {db_path}.backup
 
   2. Apply migrations:
-     scout db migrate apply
+     price-scout db migrate apply
 
-Run 'scout db migrate status' to see migration details."""
+Run 'price-scout db migrate status' to see migration details."""
 
 
-def is_command_exempt(command: str | None, subcommand: str | None = None) -> bool:
+def is_command_exempt(command: str | None) -> bool:
     """Check if a command is exempt from migration checks.
 
     Args:
         command: The main CLI command (e.g., 'track', 'db', 'groups')
-        subcommand: The subcommand if applicable (e.g., 'migrate' under 'db')
 
     Returns:
         True if the command should bypass migration checks
     """
-    return command in MIGRATION_EXEMPT_COMMANDS or (
-        command == "db" and subcommand in MIGRATION_EXEMPT_DB_SUBCOMMANDS
-    )
+    return command in MIGRATION_EXEMPT_COMMANDS

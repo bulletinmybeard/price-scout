@@ -44,19 +44,19 @@ def compare_groups(_ctx: click.Context, group_names: tuple[str, ...], refresh: b
     Examples:
 
         # Compare basket across 2 groups
-        scout compare groups --name "Coffee" --name "Milk"
+        price-scout compare groups --name "Coffee" --name "Milk"
 
         # Use short flag
-        scout compare groups -n "Weekly Groceries" -n "Monthly Essentials"
+        price-scout compare groups -n "Weekly Groceries" -n "Monthly Essentials"
 
         # Refresh prices first, then compare
-        scout compare groups --name "Coffee" --name "Milk" --refresh
+        price-scout compare groups --name "Coffee" --name "Milk" --refresh
     """
     try:
         group_list = list(group_names)
 
-        if len(group_list) < 1:
-            click.echo("Error: At least 1 product group required")
+        if len(group_list) < 2:
+            click.echo("Error: At least 2 product groups required for basket comparison")
             raise click.Abort()
 
         db_manager = DatabaseManager(get_db_url())
@@ -92,7 +92,9 @@ def compare_groups(_ctx: click.Context, group_names: tuple[str, ...], refresh: b
             click.echo("No data found for specified groups")
             raise click.Abort()
 
-        _display_provider_totals(result["providers"], result["statistics"])
+        _display_provider_totals(
+            result["providers"], result["statistics"], result.get("products", [])
+        )
         click.echo()
         _display_category_subtotals(result["categories"])
         click.echo()
@@ -108,7 +110,16 @@ def compare_groups(_ctx: click.Context, group_names: tuple[str, ...], refresh: b
         raise click.Abort() from e
 
 
-def _display_provider_totals(providers: list[dict], stats: dict):
+def _provider_currencies(products: list[dict]) -> dict[str, str]:
+    currencies: dict[str, str] = {}
+    for product in products:
+        provider = product.get("provider")
+        if provider and provider not in currencies:
+            currencies[provider] = product.get("currency") or "EUR"
+    return currencies
+
+
+def _display_provider_totals(providers: list[dict], stats: dict, products: list[dict]):
     table = RichTable(
         title="Basket Comparison - Provider Totals",
         box=box.ROUNDED,
@@ -124,11 +135,14 @@ def _display_provider_totals(providers: list[dict], stats: dict):
     table.add_column("Promotions", justify="right", style="yellow")
     table.add_column("Savings", justify="right", style="magenta")
 
+    currencies = _provider_currencies(products)
+
     # Sort by total cost (cheapest first)
     sorted_providers = sorted(providers, key=lambda x: x["total_cost"])
     cheapest = sorted_providers[0]
 
     for provider in sorted_providers:
+        currency = currencies.get(provider["provider"], "EUR")
         is_cheapest = provider["provider"] == cheapest["provider"]
         savings = provider["total_cost"] - cheapest["total_cost"]
         unavailable_count = provider["product_count"] - provider["available_count"]
@@ -140,12 +154,12 @@ def _display_provider_totals(providers: list[dict], stats: dict):
         table.add_row(
             f"[{name_style}]{provider['provider']}[/{name_style}]"
             + (" [bold green]BEST[/bold green]" if is_cheapest else ""),
-            f"[{cost_style}]EUR{provider['total_cost']:.2f}[/{cost_style}]",
+            f"[{cost_style}]{currency}{provider['total_cost']:.2f}[/{cost_style}]",
             str(provider["product_count"]),
             f"{provider['available_count']}/{provider['product_count']}",
             str(unavailable_count) if unavailable_count > 0 else "-",
             str(provider.get("promotion_count", 0)),
-            f"+EUR{savings:.2f}" if savings > 0 else "EUR0.00",
+            f"+{currency}{savings:.2f}" if savings > 0 else f"{currency}0.00",
         )
 
     console.print(table)
@@ -154,9 +168,10 @@ def _display_provider_totals(providers: list[dict], stats: dict):
     if len(providers) > 1 and stats and stats.get("price_ranges"):
         diff = stats["price_ranges"]["difference"]
         diff_pct = stats["price_ranges"]["difference_pct"]
+        winner_currency = currencies.get(cheapest["provider"], "EUR")
         click.echo(
             f"\n{cheapest['provider']} is cheapest: "
-            f"EUR{diff:.2f} ({diff_pct:.1f}%) savings vs most expensive"
+            f"{winner_currency}{diff:.2f} ({diff_pct:.1f}%) savings vs most expensive"
         )
 
     total_unavailable = sum(p["product_count"] - p["available_count"] for p in providers)

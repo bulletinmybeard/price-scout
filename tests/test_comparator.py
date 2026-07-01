@@ -376,19 +376,24 @@ class TestBasketComparison:
                             "is_available": False,
                         },  # Unavailable
                     ],
-                }
+                },
+                {
+                    "name": "Milk",
+                    "category": "dairy",
+                    "products": [{"provider": "store_a", "price": 1.99}],
+                },
             ],
         )
 
-        result = comparator.compare_baskets(group_names=["Coffee"])
+        result = comparator.compare_baskets(group_names=["Coffee", "Milk"])
 
         assert len(result["providers"]) == 2
-        assert len(result["products"]) == 2
+        assert len(result["products"]) == 3  # Coffee x2 providers + Milk x1 provider
 
         store_a_total = next(p for p in result["providers"] if p["provider"] == "store_a")
         store_b_total = next(p for p in result["providers"] if p["provider"] == "store_b")
 
-        assert store_a_total["total_cost"] == 5.99  # Available product included
+        assert store_a_total["total_cost"] == 7.98  # 5.99 + 1.99 (available only)
         assert store_b_total["total_cost"] == 0.00  # Unavailable product excluded from total
         assert store_b_total["available_count"] == 0  # No available products at store_b
         assert store_b_total["product_count"] == 1  # But product still tracked
@@ -421,8 +426,11 @@ class TestBasketComparison:
         db_manager.create_tables()
         comparator = PriceComparator(db_manager)
 
-        with pytest.raises(ValueError, match="At least 1 product group required"):
+        with pytest.raises(ValueError, match="At least 2 product groups required"):
             comparator.compare_baskets(group_names=[])
+
+        with pytest.raises(ValueError, match="At least 2 product groups required"):
+            comparator.compare_baskets(group_names=["Coffee"])
 
     def test_basket_comparison_category_subtotals(self, tmp_path):
         db_path = tmp_path / "test_basket.duckdb"

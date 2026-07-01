@@ -8,6 +8,7 @@ from chalkbox.logging.bridge import get_logger, setup_logging
 import click
 
 from src.cli.commands.compare import compare
+from src.cli.commands.config_cmd import config
 from src.cli.commands.database import db
 from src.cli.commands.groups import groups
 from src.cli.commands.refresh import refresh
@@ -132,7 +133,8 @@ def cli(ctx: click.Context, config_file: Path | str, provider_config: str, debug
         except SystemExit:
             raise
         except Exception as e:
-            logger.debug(f"Migration check skipped due to error: {e}")
+            click.echo(f"Migration check failed: {e}", err=True)
+            raise SystemExit(2) from e
 
     if ctx.invoked_subcommand is None:
         click.echo(ctx.get_help())
@@ -140,6 +142,7 @@ def cli(ctx: click.Context, config_file: Path | str, provider_config: str, debug
 
 
 cli.add_command(compare)
+cli.add_command(config)
 cli.add_command(groups)
 cli.add_command(db)
 

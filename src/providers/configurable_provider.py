@@ -234,29 +234,29 @@ class ConfigurableProvider(AsyncBaseProvider):
 
         offers_path = field_mappings.get("offers", "offers")
         offers = FieldMapper.get_value(json_ld, offers_path, default={})
+        strategy = json_ld_config.get("offer_selection_strategy", "first")
         if isinstance(offers, list) and offers:
-            # Check database for locked offer_selection_strategy
-            # This prevents price history corruption when config changes after first snapshot
+            # Lock strategy only after the first snapshot exists
             locked_strategy = None
             try:
                 db = DatabaseManager(get_db_url(), read_only=True)
                 tracked_page = db.get_tracked_page(url)
-                if tracked_page and tracked_page.get("offer_selection_strategy"):
-                    locked_strategy = tracked_page["offer_selection_strategy"]
+                if tracked_page and db.get_snapshot_count(url) > 0:
+                    locked_strategy = tracked_page.get("offer_selection_strategy")
                     config_strategy = json_ld_config.get("offer_selection_strategy", "first")
 
-                    if locked_strategy != config_strategy:
+                    if locked_strategy and locked_strategy != config_strategy:
                         logger.warning(
                             f"⚠ Using locked offer strategy '{locked_strategy}' for this product "
                             f"(config has '{config_strategy}' but strategy locked from first snapshot)"
                         )
                         logger.warning(
-                            f"  To change strategy: Delete all snapshots for {url[:60]}... and re-track"
+                            f"  To change strategy: Delete product with "
+                            f"'price-scout track --delete --url {url[:60]}...' and re-track"
                         )
             except Exception as e:
                 logger.debug(f"Could not check for locked offer strategy: {e}")
 
-            # Use locked strategy if available, otherwise fall back to config (default: first)
             strategy = locked_strategy or json_ld_config.get("offer_selection_strategy", "first")
             offers = self._select_best_offer(offers, strategy)
 
@@ -458,6 +458,7 @@ class ConfigurableProvider(AsyncBaseProvider):
             image=image,
             images=images,
             provider=self.name,
+            offer_selection_strategy=strategy,
             extracted_at=now_in_configured_tz(),
             raw_data=json_ld,
         )

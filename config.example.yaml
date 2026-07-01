@@ -28,6 +28,7 @@ database:
 
 cli:
   max_parallel_urls: 25
+  max_parallel_workers: 3
   dev_mode: false
   timezone: "Europe/Amsterdam"
 

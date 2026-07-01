@@ -3,7 +3,7 @@ from typing import cast
 
 import click
 
-from src.cli.helpers import detect_provider_from_url, get_db_url
+from src.cli.helpers import detect_provider_from_url, get_db_url, get_max_parallel_workers
 from src.database.db_manager import DatabaseManager
 from src.price_tracker.tracker import PriceTracker
 from src.providers import get_factory
@@ -110,7 +110,8 @@ def refresh(ctx: click.Context, providers, group, url):
 
     click.echo("Refreshing prices...\n")
 
-    with ThreadPoolExecutor(max_workers=3) as executor:
+    max_workers = max(1, min(len(urls_to_refresh), get_max_parallel_workers()))
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures = {}
         for url_item in urls_to_refresh:
             provider_name, _ = detect_provider_from_url(url_item, factory)

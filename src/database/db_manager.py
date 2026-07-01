@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 import json
 from pathlib import Path
 from threading import Lock
+import time
 from typing import Any
 
 from chalkbox.logging.bridge import get_logger
@@ -23,6 +24,8 @@ logger = get_logger(__name__)
 
 # Global lock for Parquet export to prevent race conditions when multiple threads export simultaneously
 _parquet_export_lock = Lock()
+_last_parquet_export = 0.0
+PARQUET_EXPORT_DEBOUNCE_SECONDS = 5.0
 
 
 class DatabaseManager:
@@ -111,7 +114,33 @@ class DatabaseManager:
 
             return snapshot_id
 
-    def export_snapshots_to_parquet(self) -> None:
+    def get_snapshot_count(self, url: str) -> int:
+        with self.get_connection() as conn:
+            result = conn.execute(
+                "SELECT COUNT(*) FROM page_snapshots WHERE url = ?", [url]
+            ).fetchone()
+            return int(result[0]) if result else 0
+
+    def update_offer_selection_strategy(self, url: str, strategy: str) -> None:
+        with self.get_connection() as conn:
+            now = now_in_configured_tz()
+            conn.execute(
+                """
+                UPDATE tracked_pages
+                SET offer_selection_strategy = ?, updated_at = ?
+                WHERE url = ?
+                """,
+                [strategy, now, url],
+            )
+
+    def export_snapshots_to_parquet(self, force: bool = False) -> None:
+        global _last_parquet_export
+
+        if not force:
+            elapsed = time.monotonic() - _last_parquet_export
+            if elapsed < PARQUET_EXPORT_DEBOUNCE_SECONDS:
+                return
+
         # Use global lock to ensure only one thread exports at a time
         with _parquet_export_lock:
             try:
@@ -151,6 +180,7 @@ class DatabaseManager:
                         parquet_tmp.rename(parquet_file)
 
                 logger.debug(f"Exported all tables to Parquet: {parquet_dir}")
+                _last_parquet_export = time.monotonic()
 
             except Exception as e:
                 logger.warning(f"Failed to export tables to Parquet: {e}")
@@ -371,37 +401,23 @@ class DatabaseManager:
             return [p for p in pages if p is not None]
 
     def update_last_checked(self, url: str, price: float | None = None) -> None:
-        """
-        Update last_checked timestamp and optionally last_price.
-
-        Note: This method may silently fail if the tracked page is referenced by
-        product groups due to foreign key constraints. This is expected behavior
-        and does not affect product tracking functionality.
-        """
-        try:
-            with self.get_connection() as conn:
-                now = now_in_configured_tz()
-                if price is not None:
-                    sql = """
-                        UPDATE tracked_pages
-                        SET last_checked = ?, last_price = ?, updated_at = ?
-                        WHERE url = ?
-                    """
-                    conn.execute(sql, [now, price, now, url])
-                else:
-                    sql = """
-                        UPDATE tracked_pages
-                        SET last_checked = ?, updated_at = ?
-                        WHERE url = ?
-                    """
-                    conn.execute(sql, [now, now, url])
-        except Exception as e:
-            # Silently ignore foreign key constraint errors
-            # These occur when pages are referenced by product groups
-            if "foreign key constraint" not in str(e).lower():
-                # Re-raise if it's not a foreign key error
-                raise
-            logger.debug(f"Skipped update for {url[:50]} (referenced by product group)")
+        """Update last_checked timestamp and optionally last_price."""
+        with self.get_connection() as conn:
+            now = now_in_configured_tz()
+            if price is not None:
+                sql = """
+                    UPDATE tracked_pages
+                    SET last_checked = ?, last_price = ?, updated_at = ?
+                    WHERE url = ?
+                """
+                conn.execute(sql, [now, price, now, url])
+            else:
+                sql = """
+                    UPDATE tracked_pages
+                    SET last_checked = ?, updated_at = ?
+                    WHERE url = ?
+                """
+                conn.execute(sql, [now, now, url])
 
     def get_price_trend(self, url: str, days: int = 30) -> list[dict[str, Any]]:
         since = now_in_configured_tz() - timedelta(days=days)
@@ -676,7 +692,7 @@ class DatabaseManager:
             group_ids = [row[0] for row in groups_before]
 
             # Delete operations (order is critical due to FK constraints)
-            conn.execute("DELETE FROM page_groups WHERE page_id = ?", [page_id]).fetchone()
+            conn.execute("DELETE FROM page_groups WHERE page_id = ?", [page_id])
             associations_deleted = len(group_ids)
 
             conn.execute("DELETE FROM page_snapshots WHERE url = ?", [url])

@@ -246,6 +246,13 @@ class CLIConfig(BaseModel):
         description="Maximum number of URLs allowed in parallel track command",
     )
 
+    max_parallel_workers: int = Field(
+        default=3,
+        ge=1,
+        le=10,
+        description="Maximum parallel browser workers for track/refresh operations",
+    )
+
     dev_mode: bool = Field(
         default=False,
         description=(

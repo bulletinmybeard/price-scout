@@ -105,7 +105,7 @@ def init():
                 db_manager.create_tables()
 
                 spinner.update("Creating Parquet exports for DuckDB UI...")
-                db_manager.export_snapshots_to_parquet()
+                db_manager.export_snapshots_to_parquet(force=True)
 
                 spinner.success("Database reset and reinitialized successfully!")
 
@@ -124,7 +124,7 @@ def init():
                 db_manager = DatabaseManager(db_url, read_only=False)
                 db_manager.create_tables()
                 spinner.update("Creating Parquet exports for DuckDB UI...")
-                db_manager.export_snapshots_to_parquet()
+                db_manager.export_snapshots_to_parquet(force=True)
                 spinner.success("Database initialized successfully!")
 
             show_info("Ready to track products", details="Use: price-scout track --url <URL>")
@@ -182,7 +182,7 @@ def reset(yes: bool):
             db_manager.create_tables()
 
             spinner.update("Creating empty Parquet exports for DuckDB UI...")
-            db_manager.export_snapshots_to_parquet()
+            db_manager.export_snapshots_to_parquet(force=True)
 
             spinner.success("Database reset successfully!")
 
@@ -359,7 +359,7 @@ def status(as_json: bool):
                 console.print(f"  [dim]• {version}_{name}[/dim]")
             console.print()
             console.print(
-                "[yellow]Run 'scout db migrate apply' to apply pending migrations[/yellow]"
+                "[yellow]Run 'price-scout db migrate apply' to apply pending migrations[/yellow]"
             )
         else:
             console.print("[green]✓ All migrations up to date[/green]")

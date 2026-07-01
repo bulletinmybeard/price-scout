@@ -60,6 +60,12 @@ def get_db_url(config_path: str | Path | None = None) -> str:
     return db_url
 
 
+def get_max_parallel_workers() -> int:
+    """Get configured parallel worker count for scrape operations."""
+    config = load_typed_config()
+    return config.cli.max_parallel_workers
+
+
 def get_data_directory() -> Path:
     """Get data directory based on environment."""
     if is_docker_environment():
