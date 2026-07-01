@@ -12,7 +12,6 @@ class FieldMapper:
         default: Any = None,
         value_type: str | None = None,
     ) -> Any:
-        """Extract value from nested data structure using path notation."""
         if isinstance(path, list):
             paths_to_try = path
             default_from_config = None
@@ -36,7 +35,6 @@ class FieldMapper:
 
     @staticmethod
     def _extract_single_path(data: dict[str, Any], path: str) -> Any | None:
-        """Extract value from a single path string."""
         if not path:
             return None
 
@@ -65,7 +63,6 @@ class FieldMapper:
 
     @staticmethod
     def _parse_path(path: str) -> list[str]:
-        """Parse dot-notation path into parts."""
         parts = []
         current_part = ""
 
@@ -84,7 +81,6 @@ class FieldMapper:
 
     @staticmethod
     def _parse_array_notation(part: str) -> tuple[str, int]:
-        """Parse array notation into key and index."""
         match = re.match(r"^(.+)\[(\d+)\]$", part)
         if not match:
             raise ValueError(f"Invalid array notation: {part}")
@@ -95,7 +91,6 @@ class FieldMapper:
 
     @staticmethod
     def _convert_type(value: Any, value_type: str | None) -> Any:
-        """Convert value to specified type."""
         if value is None or value_type is None:
             return value
 
@@ -119,6 +114,5 @@ class FieldMapper:
 
     @staticmethod
     def has_field(data: dict[str, Any], path: str | list[str]) -> bool:
-        """Check if field exists in data structure."""
         value = FieldMapper.get_value(data, path)
         return value is not None

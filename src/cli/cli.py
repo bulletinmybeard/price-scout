@@ -1,22 +1,25 @@
 import atexit
-import logging
 from pathlib import Path
 import signal
 import sys
 from types import FrameType
 
-from chalkbox.logging.bridge import setup_logging
+from chalkbox.logging.bridge import get_logger, setup_logging
 import click
 
+from src.cli.commands.compare import compare
+from src.cli.commands.config_cmd import config
 from src.cli.commands.database import db
 from src.cli.commands.groups import groups
 from src.cli.commands.refresh import refresh
 from src.cli.commands.track import track
+from src.cli.helpers import get_db_url
 from src.config.config_loader import load_typed_config
+from src.database.migration_checker import check_migrations_required, is_command_exempt
 
 _shutdown_requested = False
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 def _signal_handler(signum: int, _frame: FrameType | None) -> None:
@@ -69,7 +72,7 @@ def _cleanup_on_exit():
     default=False,
     help="Enable debug logging output (overrides config dev_mode)",
 )
-@click.version_option(version="1.0.0")
+@click.version_option(version="1.2.0")
 @click.pass_context
 def cli(ctx: click.Context, config_file: Path | str, provider_config: str, debug: bool):
     """Price Scout - Modular browser automation toolkit for price monitoring."""
@@ -119,11 +122,27 @@ def cli(ctx: click.Context, config_file: Path | str, provider_config: str, debug
     atexit.register(_cleanup_on_exit)
     logger.debug("Atexit cleanup handler registered")
 
+    if not is_command_exempt(ctx.invoked_subcommand):
+        try:
+            db_url = get_db_url(config_file)
+            migration_status = check_migrations_required(db_url)
+
+            if migration_status.blocked:
+                click.echo(migration_status.message, err=True)
+                raise SystemExit(1)
+        except SystemExit:
+            raise
+        except Exception as e:
+            click.echo(f"Migration check failed: {e}", err=True)
+            raise SystemExit(2) from e
+
     if ctx.invoked_subcommand is None:
         click.echo(ctx.get_help())
         ctx.exit()
 
 
+cli.add_command(compare)
+cli.add_command(config)
 cli.add_command(groups)
 cli.add_command(db)
 

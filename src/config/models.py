@@ -32,9 +32,9 @@ class ScrapingConfig(BaseModel):
         description="Maximum retry attempts for failed requests",
     )
     timeout_seconds: int = Field(
-        default=30,
+        default=60,
         ge=1,
-        description="Request timeout in seconds",
+        description="Page navigation timeout in seconds",
     )
     strip_query_params: bool = Field(
         default=True,
@@ -106,6 +106,14 @@ class WaitStrategy(str, Enum):
     NETWORKIDLE = "networkidle"
 
 
+class ExtractionMethod(str, Enum):
+    """Supported data extraction methods."""
+
+    JSON_LD = "json-ld"
+    CSS = "css"
+    XPATH = "xpath"
+
+
 class ProviderConfig(BaseModel):
     """Provider configuration for web scraping."""
 
@@ -150,10 +158,15 @@ class ProviderConfig(BaseModel):
         description="Custom provider class name (e.g., 'CustomProvider')",
     )
 
-    # Complex nested configs (kept as dict for flexibility in Phase 3)
     extraction: dict[str, Any] = Field(
         default_factory=dict,
-        description="Extraction configuration (json_ld only)",
+        description=(
+            "Extraction configuration supporting multiple methods:\n"
+            "- priority: list[str] - extraction methods to try in order (e.g., ['json-ld', 'css'])\n"
+            "- json_ld: dict - JSON-LD extraction config with field_mappings\n"
+            "- css_selectors: dict - CSS/XPath selectors per field\n"
+            "Example: {'priority': ['json-ld', 'css'], 'css_selectors': {'name': ['.product-title']}}"
+        ),
     )
     transformations: dict[str, Any] = Field(
         default_factory=dict,
@@ -231,6 +244,13 @@ class CLIConfig(BaseModel):
         ge=1,
         le=100,
         description="Maximum number of URLs allowed in parallel track command",
+    )
+
+    max_parallel_workers: int = Field(
+        default=3,
+        ge=1,
+        le=10,
+        description="Maximum parallel browser workers for track/refresh operations",
     )
 
     dev_mode: bool = Field(

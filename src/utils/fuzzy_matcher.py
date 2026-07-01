@@ -5,7 +5,6 @@ from src.utils.slug import generate_slug, normalize_for_comparison
 
 
 def calculate_similarity(input_text: str, target_text: str) -> float:
-    """Calculate similarity score between two strings."""
     if not input_text or not target_text:
         return 0.0
 
@@ -26,7 +25,6 @@ def find_similar_groups(
     threshold: float = 0.8,
     limit: int = 3,
 ) -> list[tuple[dict[str, Any], float]]:
-    """Find similar group names using fuzzy matching."""
     if not input_name or not existing_groups:
         return []
 
@@ -45,5 +43,4 @@ def find_similar_groups(
 
 
 def format_similarity_percentage(similarity: float) -> str:
-    """Format similarity score as percentage."""
     return f"{int(similarity * 100)}%"

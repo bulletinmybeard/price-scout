@@ -119,7 +119,7 @@ This design allows tracking how **ALL** product attributes change over time, not
 
 **Metadata**:
 
-- `extraction_method`: "json-ld", "opengraph", or "css"
+- `extraction_method`: json-ld, selectors, and XPath
 - `raw_data`: Original scraped data (JSON)
 - `scraped_at`: When data was scraped
 

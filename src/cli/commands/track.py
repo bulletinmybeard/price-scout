@@ -2,34 +2,190 @@ from contextlib import redirect_stderr
 from io import StringIO
 import json
 import sys
-from typing import Any, Literal, cast
+from typing import Any, cast
 
 from chalkbox.logging.bridge import get_logger
 import click
 
-from src.cli.chalkbox_helpers import show_error, show_info
+from src.cli.chalkbox_helpers import show_error
 from src.cli.formatters import (
     display_comparison_table_with_changes,
-    display_table_output,
-    output_json_response,
     output_multi_json_response,
 )
-from src.cli.helpers import detect_provider_from_url, get_console, get_db_url
-from src.cli.logging_config import configure_logging_for_output_mode
+from src.cli.helpers import get_console, get_db_url, resolve_url_file_path
 from src.config.config_loader import load_typed_config
 from src.database.db_manager import DatabaseManager
 from src.price_tracker.bulk_tracker import BulkTracker
-from src.price_tracker.group_helpers import (
-    associate_tracked_page_with_group,
-    auto_associate_with_groups,
-    handle_fuzzy_group_matching,
-)
+from src.price_tracker.group_helpers import handle_fuzzy_group_matching
 from src.price_tracker.tracker import PriceTracker
 from src.providers import get_factory
-from src.providers.base_product import BaseProduct
-from src.utils.datetime_utils import now_in_configured_tz
 
 logger = get_logger(__name__)
+
+
+def parse_url_file(file_path: str) -> list[str]:
+    """Parse URLs from file, one per line. Ignores empty lines and # comments."""
+    urls = []
+    with open(file_path) as f:
+        for line_num, line in enumerate(f, 1):
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            if not line.startswith(("http://", "https://")):
+                logger.warning(f"Skipping invalid URL at line {line_num}: {line}")
+                continue
+            urls.append(line)
+    return urls
+
+
+def _handle_delete_products(urls: list[str], skip_confirmation: bool, json_output: bool):
+    console = get_console()
+    db_url = get_db_url()
+    db = DatabaseManager(db_url, read_only=False)
+
+    deletion_results: list[dict[str, Any]] = []
+    all_deleted_empty_groups = set()
+
+    for url in urls:
+        try:
+            page = db.get_tracked_page(url)
+            if not page:
+                deletion_results.append(
+                    {"url": url, "status": "error", "error": "URL not found in tracked pages"}
+                )
+                continue
+
+            with db.get_connection() as conn:
+                snapshot_count_result = conn.execute(
+                    "SELECT COUNT(*) FROM page_snapshots WHERE url = ?", [url]
+                ).fetchone()
+                snapshot_count = snapshot_count_result[0] if snapshot_count_result else 0
+
+            deletion_results.append(
+                {
+                    "url": url,
+                    "status": "pending",
+                    "page_id": page["id"],
+                    "provider": page["provider"],
+                    "snapshot_count": snapshot_count,
+                }
+            )
+
+        except Exception as e:
+            deletion_results.append({"url": url, "status": "error", "error": str(e)})
+
+    valid_deletions = [r for r in deletion_results if r["status"] == "pending"]
+
+    if not valid_deletions:
+        if json_output:
+            click.echo(
+                json.dumps(
+                    {
+                        "status": "error",
+                        "message": "No valid URLs to delete",
+                        "results": deletion_results,
+                    },
+                    indent=2,
+                )
+            )
+        else:
+            show_error("No valid URLs to delete", details="Check that URLs are tracked")
+        return
+
+    if not json_output:
+        console.print()
+        console.print(f"[yellow]Deleting {len(valid_deletions)} tracked product(s):[/yellow]")
+        for result in valid_deletions:
+            console.print(f"\n  [bold]{result['url'][:80]}...[/bold]")
+            console.print(f"  Provider: {result['provider']}")
+            console.print(f"  Price history snapshots: {result['snapshot_count']}")
+        console.print()
+
+    if not skip_confirmation:
+        console.print("[red]This will permanently delete ALL data for these products:[/red]")
+        console.print("  - All price history snapshots")
+        console.print("  - Tracked page records")
+        console.print("  - Product group associations")
+        console.print()
+
+        try:
+            user_input = (
+                input(f"Are you sure you want to delete {len(valid_deletions)} product(s)? [y/N]: ")
+                .strip()
+                .lower()
+            )
+            if user_input not in ["y", "yes"]:
+                if json_output:
+                    click.echo(
+                        json.dumps(
+                            {"status": "cancelled", "message": "Deletion cancelled by user"},
+                            indent=2,
+                        )
+                    )
+                else:
+                    console.print("[dim]Deletion cancelled.[/dim]")
+                    console.print()
+                return
+        except (EOFError, KeyboardInterrupt):
+            if json_output:
+                click.echo(
+                    json.dumps(
+                        {"status": "cancelled", "message": "Deletion cancelled by user"}, indent=2
+                    )
+                )
+            else:
+                console.print("\n[dim]Deletion cancelled.[/dim]")
+                console.print()
+            return
+
+    for result in valid_deletions:
+        try:
+            deletion_summary = db.delete_tracked_page(result["url"])
+            result["status"] = "deleted"
+            result["snapshots_deleted"] = deletion_summary["snapshots_deleted"]
+            result["group_associations_removed"] = deletion_summary["group_associations_removed"]
+            result["deleted_empty_groups"] = deletion_summary["deleted_empty_groups"]
+
+            all_deleted_empty_groups.update(deletion_summary["deleted_empty_groups"])
+
+            if not json_output:
+                console.print(f"[green]✓ Deleted: {result['url'][:80]}...[/green]")
+
+        except Exception as e:
+            result["status"] = "error"
+            result["error"] = str(e)
+            if not json_output:
+                console.print(f"[red]✗ Failed: {result['url'][:80]}...[/red]")
+                console.print(f"[red]  Error: {e!s}[/red]")
+
+    if all_deleted_empty_groups and not skip_confirmation and not json_output:
+        console.print()
+        console.print(f"[dim]Removed {len(all_deleted_empty_groups)} empty product group(s):[/dim]")
+        for group_name in sorted(all_deleted_empty_groups):
+            console.print(f"  • {group_name}")
+        console.print()
+
+    if json_output:
+        click.echo(
+            json.dumps(
+                {
+                    "status": "success",
+                    "deleted_count": len([r for r in deletion_results if r["status"] == "deleted"]),
+                    "failed_count": len([r for r in deletion_results if r["status"] == "error"]),
+                    "deleted_empty_groups": list(all_deleted_empty_groups),
+                    "results": deletion_results,
+                },
+                indent=2,
+            )
+        )
+    else:
+        console.print()
+        deleted = len([r for r in deletion_results if r["status"] == "deleted"])
+        failed = len([r for r in deletion_results if r["status"] == "error"])
+        console.print(f"[green]✓ Successfully deleted: {deleted} product(s)[/green]")
+        if failed > 0:
+            console.print(f"[red]✗ Failed: {failed} product(s)[/red]")
+        console.print()
 
 
 @click.command()
@@ -37,8 +193,14 @@ logger = get_logger(__name__)
     "--url",
     "-u",
     multiple=True,
-    required=True,
     help="Product page URL(s) - max 25 URLs for comparison",
+)
+@click.option(
+    "--url-file",
+    "-F",
+    type=str,
+    multiple=True,
+    help="Read URLs from file (searches cwd, data/, ~/.price-scout/)",
 )
 @click.option("--json", "json_output", is_flag=True, help="Output as JSON (all BaseProduct fields)")
 @click.option("--check", is_flag=True, help="Check product without tracking to database")
@@ -59,16 +221,30 @@ logger = get_logger(__name__)
     default=None,
     help="Assign tracked URL(s) to a product group (creates group if doesn't exist)",
 )
+@click.option(
+    "--delete",
+    is_flag=True,
+    help="Delete tracked product(s) and ALL related data (snapshots, group associations)",
+)
+@click.option(
+    "--yes",
+    "-y",
+    is_flag=True,
+    help="Skip confirmation prompts (for delete operations)",
+)
 @click.pass_context
 def track(
     ctx,
-    url: str,
+    url: tuple[str, ...],
+    url_file: tuple[str, ...],
     json_output: bool,
     check: bool,
     cached: bool,
     full: bool,
     headed: bool | None,
     group: str | None,
+    delete: bool,
+    yes: bool,
 ):
     """
     Track one or more products from URLs and compare prices.
@@ -80,19 +256,36 @@ def track(
         # Single URL
         price-scout track --url "https://www.store-a.example/..."
         price-scout track --url "https://www.store-b.example/..." --check
-        price-scout track --url "https://www.store-c.example/..." --json
 
-        # Track with product group (creates group if doesn't exist)
-        price-scout track --url "URL" --group "Dog Food Comparison"
-        price-scout track --url "URL1" --url "URL2" --group "Weekly Groceries"
+        # From file (one URL per line, # comments ignored)
+        price-scout track --url-file products.txt
+        price-scout track -F products.txt --group "Weekly Groceries"
 
         # Multi-URL comparison
         price-scout track --url "URL1" --url "URL2" --url "URL3"
         price-scout track --url "URL1" --url "URL2" --cached
-        price-scout track --url "URL1" --url "URL2" --url "URL3" --json
-        price-scout track --url "URL1" --url "URL2" --check
     """
-    unique_urls = list(dict.fromkeys(url))
+    if url and url_file:
+        raise click.UsageError("Cannot use both --url and --url-file. Choose one.")
+    if not url and not url_file:
+        raise click.UsageError("Must provide either --url or --url-file.")
+    if len(url_file) > 1:
+        raise click.UsageError("Only one --url-file/-F argument is allowed.")
+
+    if url_file:
+        try:
+            resolved_path = resolve_url_file_path(url_file[0])
+            urls_from_file = parse_url_file(str(resolved_path))
+        except FileNotFoundError as e:
+            raise click.UsageError(str(e)) from None
+        if not urls_from_file:
+            raise click.UsageError(f"No valid URLs found in {resolved_path}")
+        unique_urls = list(dict.fromkeys(urls_from_file))
+    else:
+        unique_urls = list(dict.fromkeys(url))
+
+    if delete:
+        return _handle_delete_products(unique_urls, yes, json_output)
 
     # Load max_parallel_urls from config (default: 25)
     config = load_typed_config()
@@ -111,265 +304,73 @@ def track(
         raise click.Abort()
 
     # Configure logging based on output mode and debug flag
-    debug = ctx.obj.get("debug", False)
-
-    mode: Literal["debug", "json", "table"]
-    if debug:
-        mode = "debug"
-    elif json_output:
-        mode = "json"
-    else:
-        mode = "table"
-    configure_logging_for_output_mode(mode, debug)
+    ctx.obj.get("debug", False)
 
     # In JSON mode, suppress stderr to hide event loop cleanup warnings
     stderr_suppressor = StringIO() if json_output else sys.stderr
 
-    # Handle multiple URLs with BulkTracker
-    if len(unique_urls) > 1:
-        try:
-            with redirect_stderr(stderr_suppressor):
-                # Initialize database and factory (write mode for tracking)
-                db_manager = DatabaseManager(get_db_url(), read_only=False)
-                # Pass None if user didn't specify, so PriceTracker reads from config.yaml
-                headless_mode = None if headed is None else not headed
-                tracker = PriceTracker(db_manager, headless=headless_mode)
-                provider_config_override = ctx.obj.get("provider_config")
-                factory = get_factory(provider_config=provider_config_override)
-
-                # Fuzzy group matching - unified handling
-                resolved_group_name = handle_fuzzy_group_matching(group, db_manager, json_output)
-
-                # Use BulkTracker for multi-URL operations
-                bulk_tracker = BulkTracker(
-                    tracker=tracker,
-                    factory=factory,
-                    db_manager=db_manager,
-                    check=check,
-                    cached=cached,
-                    json_output=json_output,
-                )
-
-                # Track all URLs in parallel
-                results = bulk_tracker.track_multiple_urls(unique_urls, resolved_group_name)
-
-                # Output results
-                if json_output:
-                    output_multi_json_response(results)
-                else:
-                    # Get latest snapshots with previous for change detection
-                    snapshots_with_changes = db_manager.get_latest_snapshots_with_previous(
-                        unique_urls
-                    )
-
-                    console = get_console()
-                    console.print()  # Add blank line before table
-                    if snapshots_with_changes:
-                        display_comparison_table_with_changes(snapshots_with_changes, console)
-                    else:
-                        console.print("[yellow]No snapshots found for comparison.[/yellow]")
-
-                return
-
-        except click.Abort:
-            raise
-        except KeyboardInterrupt:
-            # BulkTracker already handled graceful shutdown
-            return
-        except Exception as e:
-            error_msg = str(e)
-            if json_output:
-                output_multi_json_response([], error=error_msg)
-            else:
-                show_error("Failed to track multiple URLs", details=error_msg)
-            raise click.Abort() from e
-
-    # SINGLE-URL LOGIC
+    # Handle all product URLs with BulkTracker
     try:
         with redirect_stderr(stderr_suppressor):
-            # Use first URL for single-URL mode
-            single_url = unique_urls[0]
-
-            # Auto-detect provider
-            provider_config_override = ctx.obj.get("provider_config")
-            factory = get_factory(provider_config=provider_config_override)
-            provider_name, _provider_config = detect_provider_from_url(single_url, factory)
-
-            if not provider_name:
-                error_msg = f"Could not detect provider for URL: {single_url}\nAvailable providers: {', '.join(factory.list_providers())}"
-                if json_output:
-                    output_json_response(None, error_msg)
-                    return
-                else:
-                    show_error(
-                        "Could not detect provider",
-                        details=f"URL: {single_url}\n\nAvailable providers: {', '.join(factory.list_providers())}",
-                    )
-                    raise click.Abort()
-
-            # Initialize tracker (write mode for tracking)
+            # Initialize database and factory (write mode for tracking)
             db_manager = DatabaseManager(get_db_url(), read_only=False)
             # Pass None if user didn't specify, so PriceTracker reads from config.yaml
             headless_mode = None if headed is None else not headed
             tracker = PriceTracker(db_manager, headless=headless_mode)
+            provider_config_override = ctx.obj.get("provider_config")
+            factory = get_factory(provider_config=provider_config_override)
 
             # Fuzzy group matching - unified handling
             resolved_group_name = handle_fuzzy_group_matching(group, db_manager, json_output)
 
-            # Check cache if --cached flag is set
-            if cached:
-                cached_snapshot = db_manager.get_latest_snapshot(single_url)
-                if cached_snapshot:
-                    # Cache HIT - return cached snapshot data immediately
-                    if json_output:
-                        # Output the full snapshot as JSON
-                        click.echo(json.dumps(cached_snapshot, indent=2, default=str))
-                        return
-                    else:
-                        # Display cache hit message and snapshot summary
-                        console = get_console()
-                        console.print("[green]✓ Cache HIT[/green] - Returning cached snapshot")
-                        console.print(
-                            f"[dim]Scraped at: {cached_snapshot.get('scraped_at')}[/dim]\n"
-                        )
+            # Use BulkTracker for all URL operations (single or multiple)
+            bulk_tracker = BulkTracker(
+                tracker=tracker,
+                factory=factory,
+                db_manager=db_manager,
+                check=check,
+                cached=cached,
+                json_output=json_output,
+            )
 
-                        # Convert snapshot to minimal product-like dict for display
-                        _product_display = {
-                            "name": cached_snapshot.get("name"),
-                            "brand": cached_snapshot.get("brand"),
-                            "current_price": cached_snapshot.get("current_price"),
-                            "currency": cached_snapshot.get("currency"),
-                            "availability": cached_snapshot.get("availability"),
-                            "provider": cached_snapshot.get("provider"),
-                        }
-                        db_result = {
-                            "snapshot_id": cached_snapshot.get("snapshot_id"),
-                            "product_name": cached_snapshot.get("name"),
-                            "provider": cached_snapshot.get("provider"),
-                            "price": cached_snapshot.get("current_price"),
-                            "currency": cached_snapshot.get("currency"),
-                            "is_available": cached_snapshot.get("availability"),
-                            "scraped_at": cached_snapshot.get("scraped_at"),
-                        }
-
-                        # Create a mock product object for display
-                        product = BaseProduct(
-                            url=single_url,
-                            name=cached_snapshot.get("name") or "Unknown",
-                            brand=cached_snapshot.get("brand"),
-                            current_price=cached_snapshot.get("current_price"),
-                            currency=cached_snapshot.get("currency") or "EUR",
-                            availability=bool(cached_snapshot.get("availability")),
-                            extraction_method="cached",
-                        )
-                        display_table_output(product, db_result, full, console)
-                        return
-                else:
-                    # Cache MISS - continue with normal scraping
-                    if not json_output:
-                        show_info(
-                            "Cache MISS",
-                            details="No cached data found. Fetching fresh product data...",
-                        )
-
-            # Track or check product
-            db_result_tracking: dict[Any, Any] | None
-            if check:
-                # Fetch only, no DB tracking
-                product = tracker.fetch_product_only(single_url, provider_name)
-                db_result_tracking = None
-            else:
-                # Full tracking with DB
-                product, db_result_tracking = tracker.track_product_url(
-                    single_url, provider_name, track_to_db=True
-                )
-
-                # Check if URL was canonicalized and show info message
-                if product and product.raw_data.get("_canonicalization", {}).get(
-                    "was_canonicalized"
-                ):
-                    canonicalization = product.raw_data["_canonicalization"]
-                    if not json_output:
-                        console = get_console()
-                        console.print("\n[cyan]i Using canonical URL[/cyan]")
-                        console.print(f"  [dim]Provided:[/dim]  {canonicalization['original_url']}")
-                        console.print(
-                            f"  [dim]Canonical:[/dim] {canonicalization['canonical_url']}\n"
-                        )
-
-                # Add/update tracked_pages entry (same as check-scheduled)
-                # Use product.url (canonical URL) instead of single_url for database operations
-                if product:
-                    try:
-                        tracked_url = product.url  # Use canonical URL for tracking
-                        existing_page = db_manager.get_tracked_page(tracked_url)
-                        if existing_page:
-                            db_manager.update_last_checked(tracked_url, product.current_price)
-                        else:
-                            page_data = {
-                                "url": tracked_url,
-                                "provider": provider_name,
-                                "enabled": True,
-                                "last_checked": now_in_configured_tz(),
-                                "last_price": product.current_price,
-                            }
-                            db_manager.add_tracked_page(page_data)
-
-                        # Handle group association (priority: --group flag > config.yaml)
-                        if resolved_group_name:
-                            # Create group if doesn't exist and associate
-                            associate_tracked_page_with_group(
-                                tracked_url, resolved_group_name, db_manager
-                            )
-                        else:
-                            # Fallback: Auto-associate with product groups from config
-                            associated_groups = auto_associate_with_groups(tracked_url, db_manager)
-                            if associated_groups:
-                                logger.debug(
-                                    f"Auto-associated URL with groups: {', '.join(associated_groups)}"
-                                )
-
-                    except Exception as e:
-                        # Log foreign key constraint errors as debug (they don't affect tracking)
-                        # NOTE: This is expected when updating pages that are already referenced in product groups
-                        if "foreign key constraint" in str(e).lower():
-                            logger.debug(
-                                f"Foreign key constraint during page update for {single_url}: {e}"
-                            )
-                            logger.debug(
-                                "This is expected behavior when a tracked page is already associated with a product group"
-                            )
-                        else:
-                            # Silently log error to avoid disrupting user output
-                            logger.error(f"Failed to add tracked_page for {single_url}: {e}")
-
-            # Check if extraction failed
-            if not product:
-                error_msg = f"Failed to extract product data from: {single_url}"
-                if json_output:
-                    output_json_response(None, error_msg)
-                    return
-                else:
-                    show_error("Failed to extract product data", details=f"URL: {single_url}")
-                    raise click.Abort()
+            # Track all URLs in parallel
+            results = bulk_tracker.track_multiple_urls(unique_urls, resolved_group_name)
 
             # Output results
             if json_output:
-                output_json_response(product, None)
+                output_multi_json_response(results)
             else:
+                failed_urls = {url for status, url, *_ in results if status == "error"}
+
+                # Get latest snapshots with previous for change detection
+                snapshots_with_changes = db_manager.get_latest_snapshots_with_previous(unique_urls)
+
                 console = get_console()
-                display_table_output(product, db_result_tracking, full, console)
+                console.print()  # Add blank line before table
+                has_valid_snapshots = any(
+                    s.get("latest") is not None for s in snapshots_with_changes.values()
+                )
+                if has_valid_snapshots:
+                    display_comparison_table_with_changes(
+                        snapshots_with_changes, console, failed_urls=failed_urls
+                    )
+                else:
+                    console.print("[yellow]No snapshots found for comparison.[/yellow]")
+
+            return None
 
     except click.Abort:
-        # Already handled above
         raise
+    except KeyboardInterrupt:
+        # BulkTracker already handled graceful shutdown
+        return
     except Exception as e:
         error_msg = str(e)
         if json_output:
-            output_json_response(None, error_msg)
+            output_multi_json_response([], error=error_msg)
         else:
-            show_error("Failed to track product", details=error_msg)
-            raise click.Abort() from e
+            show_error("Failed to track products", details=error_msg)
+        raise click.Abort() from e
 
 
 track = cast(click.Command, track)

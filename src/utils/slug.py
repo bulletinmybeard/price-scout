@@ -2,7 +2,7 @@ import re
 
 
 def generate_slug(name: str) -> str:
-    """Generate a URL-friendly slug from a group name."""
+    """Generate a URL-friendly slug."""
     if not name:
         return ""
 
@@ -15,7 +15,6 @@ def generate_slug(name: str) -> str:
 
 
 def normalize_for_comparison(text: str) -> str:
-    """Normalize text for case-insensitive comparison."""
     if not text:
         return ""
 

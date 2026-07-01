@@ -18,7 +18,7 @@ RUN apt-get update && \
         libssl-dev \
     && rm -rf /var/lib/apt/lists/*
 
-RUN pip install --no-cache-dir poetry==1.8.2
+RUN pip install --no-cache-dir poetry==2.1.4
 
 COPY pyproject.toml poetry.lock ./
 
@@ -122,13 +122,14 @@ RUN poetry config virtualenvs.create false && \
     poetry config warnings.export false
 
 COPY docker/scripts/entrypoint.sh /entrypoint.sh
+COPY docker/scripts/run_migrations.sh /run_migrations.sh
 COPY docker/scripts/watch_and_sync.sh /watch_and_sync.sh
 COPY docker/scripts/poetry_wrapper.sh /usr/local/bin/poetry-run
 COPY docker/scripts/init_ui.sql /init_ui.sql
 COPY docker/scripts/init_duckdb.py /init_duckdb.py
 COPY docker/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 
-RUN chmod +x /entrypoint.sh /watch_and_sync.sh /usr/local/bin/poetry-run
+RUN chmod +x /entrypoint.sh /run_migrations.sh /watch_and_sync.sh /usr/local/bin/poetry-run
 
 # Create dummy xdg-open to silence DuckDB browser open attempts (no GUI in Docker)
 RUN echo '#!/bin/sh\nexit 0' > /usr/local/bin/xdg-open && chmod +x /usr/local/bin/xdg-open

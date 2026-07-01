@@ -19,7 +19,6 @@ def get_configured_timezone(config_path: str | None = None) -> ZoneInfo:
 
 
 def now_in_configured_tz(config_path: str | None = None) -> datetime:
-    """Get current datetime in configured timezone."""
     tz = get_configured_timezone(config_path)
     # Get timezone-aware datetime, then remove timezone info
     # This preserves the local time (e.g., 06:30) without timezone conversion
@@ -27,7 +26,6 @@ def now_in_configured_tz(config_path: str | None = None) -> datetime:
 
 
 def to_configured_tz(dt: datetime, config_path: str | None = None) -> datetime:
-    """Convert datetime to configured timezone."""
     tz = get_configured_timezone(config_path)
 
     if dt.tzinfo is None:

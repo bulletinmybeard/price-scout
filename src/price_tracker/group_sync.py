@@ -14,12 +14,10 @@ class GroupSync:
     """Wrapper class for group synchronization functionality."""
 
     def __init__(self, db_manager: DatabaseManager, config: AppConfig):
-        """Initialize GroupSync with database manager and typed config."""
         self.db_manager = db_manager
         self.config = config
 
     def sync_groups(self, dry_run: bool = False) -> dict[str, list[str]]:
-        """Sync groups from config to database."""
         changes: dict[str, list[str]] = {"created": [], "updated": [], "deactivated": []}
 
         config_groups = {g.name: g for g in self.config.product_groups}
@@ -46,6 +44,7 @@ class GroupSync:
                     page_data = {
                         "url": url,
                         "provider": provider_name,
+                        "offer_selection_strategy": "first",
                         "enabled": True,
                     }
                     page_id = self.db_manager.add_tracked_page(page_data)
@@ -68,7 +67,6 @@ def sync_groups_from_config(
     db_manager: DatabaseManager,
     remove_orphans: bool = False,
 ) -> dict[str, Any]:
-    """Sync product groups from config to database."""
     logger.debug("Starting group sync from config")
 
     stats: dict[str, Any] = {
@@ -132,6 +130,7 @@ def sync_groups_from_config(
                     page_data = {
                         "url": url,
                         "provider": provider_name,
+                        "offer_selection_strategy": "first",
                         "enabled": True,
                         "last_checked": None,
                         "last_price": None,
@@ -177,7 +176,6 @@ def sync_single_group(
     config: AppConfig,
     db_manager: DatabaseManager,
 ) -> bool:
-    """Sync a single group from config to database."""
     group_config = next((g for g in config.product_groups if g.name == group_name), None)
 
     if not group_config:
@@ -207,6 +205,7 @@ def sync_single_group(
             page_data = {
                 "url": url,
                 "provider": provider_name,
+                "offer_selection_strategy": "first",
                 "enabled": True,
             }
 
@@ -227,7 +226,6 @@ def get_sync_status(
     config: AppConfig,
     db_manager: DatabaseManager,
 ) -> dict[str, Any]:
-    """Get the current sync status between config and database."""
     config_groups = {g.name for g in config.product_groups}
     db_groups = {g["name"] for g in db_manager.get_all_groups()}
 

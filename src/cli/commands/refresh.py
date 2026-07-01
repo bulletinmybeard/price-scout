@@ -1,10 +1,9 @@
 from concurrent.futures import ThreadPoolExecutor, as_completed
-import logging
 from typing import cast
 
 import click
 
-from src.cli.helpers import detect_provider_from_url, get_db_url
+from src.cli.helpers import detect_provider_from_url, get_db_url, get_max_parallel_workers
 from src.database.db_manager import DatabaseManager
 from src.price_tracker.tracker import PriceTracker
 from src.providers import get_factory
@@ -48,14 +47,6 @@ def refresh(ctx: click.Context, providers, group, url):
         # Refresh single product
         price-scout refresh --url "https://www.webshop-a/products/..."
     """
-    # Configure logging based on debug flag
-    debug = ctx.obj.get("debug", False)
-    if not debug:
-        # Production mode: only show warnings and errors
-        logging.getLogger().setLevel(logging.WARNING)
-        for logger_name in ["src", "config", "playwright", "urllib3", "asyncio"]:
-            logging.getLogger(logger_name).setLevel(logging.WARNING)
-
     db_manager = DatabaseManager(get_db_url(), read_only=False)
     tracker = PriceTracker(db_manager)
     provider_config_override = ctx.obj.get("provider_config")
@@ -119,7 +110,8 @@ def refresh(ctx: click.Context, providers, group, url):
 
     click.echo("Refreshing prices...\n")
 
-    with ThreadPoolExecutor(max_workers=3) as executor:
+    max_workers = max(1, min(len(urls_to_refresh), get_max_parallel_workers()))
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures = {}
         for url_item in urls_to_refresh:
             provider_name, _ = detect_provider_from_url(url_item, factory)
@@ -156,7 +148,6 @@ def refresh(ctx: click.Context, providers, group, url):
 
 
 def _refresh_single_url(url: str, provider_name: str, tracker, db_manager) -> bool:
-    """Refresh a single URL and return success status."""
     try:
         product, _db_result = tracker.track_product_url(url, provider_name, track_to_db=True)
         return product is not None

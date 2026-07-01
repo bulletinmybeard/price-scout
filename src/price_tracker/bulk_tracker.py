@@ -1,7 +1,8 @@
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from contextlib import redirect_stderr
+from contextlib import contextmanager, redirect_stderr
 from io import StringIO
+import logging
 import sys
 from threading import Lock
 from typing import Any
@@ -17,13 +18,30 @@ from src.cli.helpers import (
     get_console,
     get_db_url,
     get_display_name_for_url,
+    get_max_parallel_workers,
 )
-from src.cli.logging_config import suppress_loggers_during_rich_display
 from src.cli.progress_components import CurrentProductColumn
 from src.database.db_manager import DatabaseManager
 from src.price_tracker.scraping_worker import scrape_single_url
 
 logger = get_logger(__name__)
+
+
+@contextmanager
+def suppress_loggers_during_display():
+    """Suppress loggers during Rich Live display to prevent visual glitches."""
+    loggers_to_suppress = ["src", "config", "playwright", "urllib3", "asyncio", "pyld"]
+    original_levels = {}
+
+    try:
+        for name in loggers_to_suppress:
+            log = logging.getLogger(name)
+            original_levels[name] = log.level
+            log.setLevel(logging.CRITICAL)
+        yield
+    finally:
+        for name, level in original_levels.items():
+            logging.getLogger(name).setLevel(level)
 
 
 class BulkTracker:
@@ -47,7 +65,6 @@ class BulkTracker:
         cached: bool = False,
         json_output: bool = False,
     ):
-        """Initialize bulk tracker."""
         self.tracker = tracker
         self.factory = factory
         self.db_manager = db_manager
@@ -58,7 +75,6 @@ class BulkTracker:
     def track_multiple_urls(
         self, urls: list[str], group_name: str | None = None
     ) -> list[tuple[str, str, Any]]:
-        """Track multiple URLs in parallel with progress display."""
         results: list[tuple[str, str, Any]] = []
         urls_to_scrape = []
 
@@ -102,8 +118,7 @@ class BulkTracker:
     def _track_parallel_json_mode(
         self, urls_to_scrape: list[str], group_name: str | None, results: list
     ) -> list[tuple[str, str, Any]]:
-        """Track URLs in parallel without progress bars (JSON mode)."""
-        max_workers = max(1, min(len(urls_to_scrape), 3))
+        max_workers = max(1, min(len(urls_to_scrape), get_max_parallel_workers()))
         db_url = get_db_url()
 
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
@@ -134,7 +149,6 @@ class BulkTracker:
         group_name: str | None,
         results: list,
     ) -> list[tuple[str, str, Any]]:
-        """Track URLs in parallel with Rich progress bars (table mode)."""
         console = get_console()
         console.print(
             f"\nTracking {total_products} product(s) across {total_providers} provider(s)\n"
@@ -197,17 +211,17 @@ class BulkTracker:
             display_name = get_display_name_for_url(url, self.db_manager)
             url_to_display_name[url] = display_name
 
-        stderr_suppressor = StringIO() if self.json_output else sys.stderr
+        output_suppressor = StringIO() if self.json_output else sys.stderr
 
         with (
-            suppress_loggers_during_rich_display(),
-            redirect_stderr(stderr_suppressor),
-            Live(progress_group, refresh_per_second=4),
+            suppress_loggers_during_display(),
+            redirect_stderr(output_suppressor),
+            Live(progress_group, refresh_per_second=4, console=get_console()),
         ):
             try:
                 total_completed = 0
 
-                max_workers = max(1, min(len(urls_to_scrape), 3))
+                max_workers = max(1, min(len(urls_to_scrape), get_max_parallel_workers()))
                 db_url = get_db_url()
 
                 with ThreadPoolExecutor(max_workers=max_workers) as executor:
@@ -307,7 +321,6 @@ class BulkTracker:
 
     @staticmethod
     def _display_issues_summary(failures_by_provider: dict, failure_counts: dict) -> None:
-        """Display summary of failures grouped by provider."""
         total_failures = sum(failure_counts.values())
         if total_failures == 0:
             return

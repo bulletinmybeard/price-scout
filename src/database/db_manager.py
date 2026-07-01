@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 import json
 from pathlib import Path
 from threading import Lock
+import time
 from typing import Any
 
 from chalkbox.logging.bridge import get_logger
@@ -23,6 +24,8 @@ logger = get_logger(__name__)
 
 # Global lock for Parquet export to prevent race conditions when multiple threads export simultaneously
 _parquet_export_lock = Lock()
+_last_parquet_export = 0.0
+PARQUET_EXPORT_DEBOUNCE_SECONDS = 5.0
 
 
 class DatabaseManager:
@@ -93,7 +96,7 @@ class DatabaseManager:
                 INSERT INTO page_snapshots ({fields})
                 VALUES ({placeholders})
                 RETURNING snapshot_id
-            """  # noqa: S608
+            """
 
             result = conn.execute(sql, list(prepared_data.values())).fetchone()
             snapshot_id: int | None = result[0] if result else None
@@ -111,8 +114,33 @@ class DatabaseManager:
 
             return snapshot_id
 
-    def export_snapshots_to_parquet(self) -> None:
-        """Export all database tables to Parquet files using atomic swap."""
+    def get_snapshot_count(self, url: str) -> int:
+        with self.get_connection() as conn:
+            result = conn.execute(
+                "SELECT COUNT(*) FROM page_snapshots WHERE url = ?", [url]
+            ).fetchone()
+            return int(result[0]) if result else 0
+
+    def update_offer_selection_strategy(self, url: str, strategy: str) -> None:
+        with self.get_connection() as conn:
+            now = now_in_configured_tz()
+            conn.execute(
+                """
+                UPDATE tracked_pages
+                SET offer_selection_strategy = ?, updated_at = ?
+                WHERE url = ?
+                """,
+                [strategy, now, url],
+            )
+
+    def export_snapshots_to_parquet(self, force: bool = False) -> None:
+        global _last_parquet_export
+
+        if not force:
+            elapsed = time.monotonic() - _last_parquet_export
+            if elapsed < PARQUET_EXPORT_DEBOUNCE_SECONDS:
+                return
+
         # Use global lock to ensure only one thread exports at a time
         with _parquet_export_lock:
             try:
@@ -144,7 +172,7 @@ class DatabaseManager:
                         # Export to temp file using DuckDB's native Parquet support
                         # Note: table_name comes from internal dictionary keys, not user input
                         sql = (
-                            f"COPY (SELECT * FROM {table_name}) TO '{parquet_tmp}' (FORMAT PARQUET)"  # noqa: S608
+                            f"COPY (SELECT * FROM {table_name}) TO '{parquet_tmp}' (FORMAT PARQUET)"
                         )
                         conn.execute(sql)
 
@@ -152,6 +180,7 @@ class DatabaseManager:
                         parquet_tmp.rename(parquet_file)
 
                 logger.debug(f"Exported all tables to Parquet: {parquet_dir}")
+                _last_parquet_export = time.monotonic()
 
             except Exception as e:
                 logger.warning(f"Failed to export tables to Parquet: {e}")
@@ -205,7 +234,6 @@ class DatabaseManager:
             return [s for s in snapshots if s is not None]
 
     def get_snapshots_by_provider(self, provider: str, days: int = 7) -> list[dict[str, Any]]:
-        """Get recent snapshots for a specific provider."""
         since = now_in_configured_tz() - timedelta(days=days)
 
         with self.get_connection() as conn:
@@ -222,7 +250,6 @@ class DatabaseManager:
     def get_snapshot_history_batch(
         self, urls: list[str], limit_per_url: int = 3
     ) -> dict[str, list[dict[str, Any]]]:
-        """Get last N snapshots for multiple URLs."""
         if not urls:
             return {}
 
@@ -240,7 +267,7 @@ class DatabaseManager:
                 FROM ranked_snapshots
                 WHERE rn <= ?
                 ORDER BY url, scraped_at DESC
-            """  # noqa: S608
+            """
 
             params = [*urls, limit_per_url]
             results = conn.execute(sql, params).fetchall()
@@ -261,7 +288,6 @@ class DatabaseManager:
     def get_latest_snapshots_with_previous(
         self, urls: list[str]
     ) -> dict[str, dict[str, dict[str, Any] | None]]:
-        """Get latest snapshot + previous snapshot for each URL to detect changes."""
         with self.get_connection() as conn:
             # Use window function to rank snapshots per URL
             placeholders = ", ".join(["?"] * len(urls))
@@ -277,7 +303,7 @@ class DatabaseManager:
                 FROM ranked_snapshots
                 WHERE rn <= 2
                 ORDER BY url, scraped_at DESC
-            """  # noqa: S608
+            """
 
             cursor = conn.execute(sql, urls)
             rows = cursor.fetchall()
@@ -336,6 +362,7 @@ class DatabaseManager:
             # Page doesn't exist - insert new record
             page_data.pop("id", None)  # Remove id (auto-generated)
             page_data.setdefault("enabled", True)
+            page_data.setdefault("offer_selection_strategy", "first")
             page_data.setdefault("created_at", now_in_configured_tz())
             page_data["updated_at"] = now_in_configured_tz()
 
@@ -346,7 +373,7 @@ class DatabaseManager:
                 INSERT INTO tracked_pages ({fields})
                 VALUES ({placeholders})
                 RETURNING id
-            """  # noqa: S608
+            """
             result = conn.execute(sql, list(page_data.values())).fetchone()
 
             if result is None:
@@ -357,14 +384,12 @@ class DatabaseManager:
             return new_id
 
     def get_tracked_page(self, url: str) -> dict[str, Any] | None:
-        """Get tracking state for a URL."""
         with self.get_connection() as conn:
             sql = "SELECT * FROM tracked_pages WHERE url = ?"
             result = conn.execute(sql, [url]).fetchone()
             return self._row_to_tracked_page_dict(result) if result else None
 
     def get_all_tracked_pages(self, enabled_only: bool = True) -> list[dict[str, Any]]:
-        """Get all tracked pages."""
         with self.get_connection() as conn:
             sql = "SELECT * FROM tracked_pages"
             if enabled_only:
@@ -376,40 +401,25 @@ class DatabaseManager:
             return [p for p in pages if p is not None]
 
     def update_last_checked(self, url: str, price: float | None = None) -> None:
-        """
-        Update last_checked timestamp and optionally last_price.
-
-        Note: This method may silently fail if the tracked page is referenced by
-        product groups due to foreign key constraints. This is expected behavior
-        and does not affect product tracking functionality.
-        """
-        try:
-            with self.get_connection() as conn:
-                now = now_in_configured_tz()
-                if price is not None:
-                    sql = """
-                        UPDATE tracked_pages
-                        SET last_checked = ?, last_price = ?, updated_at = ?
-                        WHERE url = ?
-                    """
-                    conn.execute(sql, [now, price, now, url])
-                else:
-                    sql = """
-                        UPDATE tracked_pages
-                        SET last_checked = ?, updated_at = ?
-                        WHERE url = ?
-                    """
-                    conn.execute(sql, [now, now, url])
-        except Exception as e:
-            # Silently ignore foreign key constraint errors
-            # These occur when pages are referenced by product groups
-            if "foreign key constraint" not in str(e).lower():
-                # Re-raise if it's not a foreign key error
-                raise
-            logger.debug(f"Skipped update for {url[:50]} (referenced by product group)")
+        """Update last_checked timestamp and optionally last_price."""
+        with self.get_connection() as conn:
+            now = now_in_configured_tz()
+            if price is not None:
+                sql = """
+                    UPDATE tracked_pages
+                    SET last_checked = ?, last_price = ?, updated_at = ?
+                    WHERE url = ?
+                """
+                conn.execute(sql, [now, price, now, url])
+            else:
+                sql = """
+                    UPDATE tracked_pages
+                    SET last_checked = ?, updated_at = ?
+                    WHERE url = ?
+                """
+                conn.execute(sql, [now, now, url])
 
     def get_price_trend(self, url: str, days: int = 30) -> list[dict[str, Any]]:
-        """Calculate price trend over time."""
         since = now_in_configured_tz() - timedelta(days=days)
 
         with self.get_connection() as conn:
@@ -439,7 +449,6 @@ class DatabaseManager:
             ]
 
     def get_active_promotions(self, provider: str | None = None) -> list[dict[str, Any]]:
-        """Get all products currently on promotion (from latest snapshots)."""
         with self.get_connection() as conn:
             # Get latest snapshot per URL
             sql = """
@@ -471,7 +480,6 @@ class DatabaseManager:
             return [s for s in snapshots if s is not None]
 
     def get_price_statistics(self, url: str, days: int = 90) -> dict[str, Any]:
-        """Calculate price statistics for a product."""
         since = now_in_configured_tz() - timedelta(days=days)
 
         with self.get_connection() as conn:
@@ -578,7 +586,7 @@ class DatabaseManager:
                         UPDATE product_groups
                         SET {", ".join(update_parts)}
                         WHERE group_id = ?
-                    """  # noqa: S608
+                    """
                     conn.execute(sql, params)
                     logger.debug(f"Updated metadata for group '{name}'")
 
@@ -602,14 +610,12 @@ class DatabaseManager:
             return new_group_id
 
     def get_group_by_name(self, name: str) -> dict[str, Any] | None:
-        """Get group by name."""
         with self.get_connection() as conn:
             sql = "SELECT * FROM product_groups WHERE name = ?"
             result = conn.execute(sql, [name]).fetchone()
             return self._row_to_group_dict(result) if result else None
 
     def get_all_groups(self) -> list[dict[str, Any]]:
-        """Get all product groups with page counts."""
         with self.get_connection() as conn:
             sql = """
                 SELECT
@@ -638,7 +644,6 @@ class DatabaseManager:
             return [{"group_id": row[0], "name": row[1], "slug": row[2]} for row in results]
 
     def add_page_to_group(self, page_id: int, group_id: int) -> None:
-        """Link a tracked page to a product group."""
         with self.get_connection() as conn:
             try:
                 sql = """
@@ -655,11 +660,74 @@ class DatabaseManager:
                     raise
 
     def remove_page_from_group(self, page_id: int, group_id: int) -> None:
-        """Remove a page from a product group."""
         with self.get_connection() as conn:
             sql = "DELETE FROM page_groups WHERE page_id = ? AND group_id = ?"
             conn.execute(sql, [page_id, group_id])
             logger.debug(f"Removed page {page_id} from group {group_id}")
+
+    def delete_tracked_page(self, url: str) -> dict[str, Any]:
+        """Delete tracked page and ALL related data (snapshots, group associations, etc.).
+
+        Raises:
+            ValueError: If URL not found in tracked_pages
+        """
+        with self.get_connection() as conn:
+            page_result = conn.execute(
+                "SELECT id, provider FROM tracked_pages WHERE url = ?", [url]
+            ).fetchone()
+
+            if not page_result:
+                raise ValueError(f"URL not found in tracked pages: {url}")
+
+            page_id, provider = page_result
+
+            snapshot_count_result = conn.execute(
+                "SELECT COUNT(*) FROM page_snapshots WHERE url = ?", [url]
+            ).fetchone()
+            snapshot_count = snapshot_count_result[0] if snapshot_count_result else 0
+
+            groups_before = conn.execute(
+                "SELECT group_id FROM page_groups WHERE page_id = ?", [page_id]
+            ).fetchall()
+            group_ids = [row[0] for row in groups_before]
+
+            # Delete operations (order is critical due to FK constraints)
+            conn.execute("DELETE FROM page_groups WHERE page_id = ?", [page_id])
+            associations_deleted = len(group_ids)
+
+            conn.execute("DELETE FROM page_snapshots WHERE url = ?", [url])
+
+            conn.execute("DELETE FROM tracked_pages WHERE id = ?", [page_id])
+
+            deleted_empty_groups = []
+            for group_id in group_ids:
+                remaining_pages_result = conn.execute(
+                    "SELECT COUNT(*) FROM page_groups WHERE group_id = ?", [group_id]
+                ).fetchone()
+                remaining_pages = remaining_pages_result[0] if remaining_pages_result else 0
+
+                if remaining_pages == 0:
+                    group_info = conn.execute(
+                        "SELECT name FROM product_groups WHERE group_id = ?", [group_id]
+                    ).fetchone()
+                    if group_info:
+                        deleted_empty_groups.append(group_info[0])
+                        conn.execute("DELETE FROM product_groups WHERE group_id = ?", [group_id])
+
+            logger.debug(
+                f"Deleted tracked page: {url} (page_id={page_id}, snapshots={snapshot_count}, "
+                f"groups={associations_deleted}, "
+                f"deleted_empty_groups={len(deleted_empty_groups)})"
+            )
+
+            return {
+                "page_id": page_id,
+                "provider": provider,
+                "snapshots_deleted": snapshot_count,
+                "group_associations_removed": associations_deleted,
+                "deleted_empty_groups": deleted_empty_groups,
+                "orphaned_groups": deleted_empty_groups,
+            }
 
     def get_group_pages(self, group_name: str) -> list[dict[str, Any]]:
         """
@@ -678,7 +746,6 @@ class DatabaseManager:
             return [p for p in pages if p is not None]
 
     def get_group_comparison(self, group_name: str) -> dict[str, Any]:
-        """Compare prices across providers in a group."""
         pages = self.get_group_pages(group_name)
 
         if not pages:
@@ -794,27 +861,164 @@ class DatabaseManager:
             ]
 
     def get_cheapest_in_group(self, group_name: str) -> dict[str, Any] | None:
-        """Find the provider with the lowest current price in a group."""
         comparison = self.get_group_comparison(group_name)
         return comparison.get("cheapest_provider")
 
     def get_group_statistics(self, group_name: str) -> dict[str, Any] | None:
-        """Get statistical summary for a group."""
         comparison = self.get_group_comparison(group_name)
         stats = comparison.get("statistics")
         return stats if isinstance(stats, dict) else None
 
+    def get_basket_comparison(self, group_names: list[str]) -> dict[str, Any]:
+        logger.debug(f"Getting basket comparison for {len(group_names)} groups: {group_names}")
+
+        with self.get_connection() as conn:
+            # Build placeholders for parameterized query
+            placeholders = ",".join(["?" for _ in group_names])
+
+            # Core query using v_latest_group_prices view
+            # NOTE: Always fetches ALL products (no availability filter!)
+            query = f"""
+            WITH basket_data AS (
+                SELECT
+                    group_name,
+                    category,
+                    provider,
+                    product_name,
+                    current_price as price,
+                    currency,
+                    availability,
+                    has_promotion,
+                    scraped_at as snapshot_time
+                FROM v_latest_group_prices
+                WHERE group_name IN ({placeholders})
+            ),
+            provider_totals AS (
+                SELECT
+                    provider,
+                    -- Only sum AVAILABLE products for total cost
+                    SUM(CASE WHEN availability THEN price ELSE 0 END) as total_cost,
+                    COUNT(*) as product_count,
+                    SUM(CASE WHEN availability THEN 1 ELSE 0 END) as available_count,
+                    SUM(CASE WHEN has_promotion THEN 1 ELSE 0 END) as promotion_count
+                FROM basket_data
+                GROUP BY provider
+            ),
+            category_subtotals AS (
+                SELECT
+                    category,
+                    provider,
+                    -- Only sum AVAILABLE products in categories
+                    SUM(CASE WHEN availability THEN price ELSE 0 END) as subtotal,
+                    COUNT(*) as count
+                FROM basket_data
+                GROUP BY category, provider
+                ORDER BY provider, category
+            )
+            SELECT
+                (SELECT json_group_array(json_object(
+                    'provider', provider,
+                    'total_cost', ROUND(total_cost, 2),
+                    'product_count', product_count,
+                    'available_count', available_count,
+                    'promotion_count', promotion_count
+                )) FROM (SELECT * FROM provider_totals ORDER BY total_cost)) as providers,
+
+                (SELECT json_group_array(json_object(
+                    'group_name', group_name,
+                    'category', category,
+                    'provider', provider,
+                    'name', product_name,
+                    'price', ROUND(price, 2),
+                    'currency', currency,
+                    'is_available', availability,
+                    'is_promotion', has_promotion,
+                    'snapshot_time', snapshot_time
+                )) FROM (SELECT * FROM basket_data ORDER BY provider, category, group_name)) as products,
+
+                (SELECT json_group_array(json_object(
+                    'category', category,
+                    'provider', provider,
+                    'subtotal', ROUND(subtotal, 2),
+                    'count', count
+                )) FROM (SELECT * FROM category_subtotals)) as categories
+            """
+
+            result = conn.execute(query, group_names).fetchone()
+
+            providers = json.loads(result[0]) if result and result[0] else []
+            products = json.loads(result[1]) if result and result[1] else []
+            categories = json.loads(result[2]) if result and result[2] else []
+
+        statistics = self._calculate_basket_statistics(providers, products, group_names)
+
+        found_groups = {p["group_name"] for p in products}
+        missing_groups = [g for g in group_names if g not in found_groups]
+
+        return {
+            "providers": providers,
+            "products": products,
+            "categories": categories,
+            "statistics": statistics,
+            "missing_groups": missing_groups,
+        }
+
+    def _calculate_basket_statistics(
+        self,
+        providers: list[dict],
+        products: list[dict],
+        requested_groups: list[str],
+    ) -> dict[str, Any]:
+        if not providers:
+            return {
+                "total_groups": 0,
+                "total_products": 0,
+                "providers_compared": 0,
+                "promotion_count": {},
+                "unavailable_count": {},
+                "price_ranges": None,
+            }
+
+        unique_groups = {p["group_name"] for p in products}
+
+        promotion_count = {p["provider"]: p["promotion_count"] for p in providers}
+        unavailable_count = {
+            p["provider"]: p["product_count"] - p["available_count"] for p in providers
+        }
+
+        sorted_providers = sorted(providers, key=lambda x: x["total_cost"])
+        min_provider = sorted_providers[0]
+        max_provider = sorted_providers[-1]
+        difference = max_provider["total_cost"] - min_provider["total_cost"]
+        difference_pct = (
+            (difference / min_provider["total_cost"] * 100) if min_provider["total_cost"] > 0 else 0
+        )
+
+        return {
+            "total_groups": len(unique_groups),
+            "total_products": (
+                len(products) // len(providers) if providers else 0
+            ),  # Products per provider
+            "providers_compared": len(providers),
+            "promotion_count": promotion_count,
+            "unavailable_count": unavailable_count,
+            "price_ranges": {
+                "min": {"provider": min_provider["provider"], "price": min_provider["total_cost"]},
+                "max": {"provider": max_provider["provider"], "price": max_provider["total_cost"]},
+                "difference": round(difference, 2),
+                "difference_pct": round(difference_pct, 2),
+            },
+        }
+
     # ==================== Utility Methods ====================
 
     def execute_query(self, sql: str, params: list | None = None) -> list:
-        """Execute a custom SQL query."""
         with self.get_connection() as conn:
             result = conn.execute(sql, params or [])
             return result.fetchall()
 
     @staticmethod
     def _prepare_snapshot_data(data: dict[str, Any]) -> dict[str, Any]:
-        """Prepare snapshot data for insertion (handle JSON fields)."""
         prepared: dict[str, Any] = {}
 
         json_fields = [
@@ -841,7 +1045,6 @@ class DatabaseManager:
 
     @staticmethod
     def _row_to_snapshot_dict(row: tuple) -> dict[str, Any] | None:
-        """Convert database row to snapshot dictionary."""
         if not row:
             return None
 
@@ -882,7 +1085,6 @@ class DatabaseManager:
 
     @staticmethod
     def _row_to_tracked_page_dict(row: tuple) -> dict[str, Any] | None:
-        """Convert database row to tracked page dictionary."""
         if not row:
             return None
 
@@ -897,7 +1099,6 @@ class DatabaseManager:
 
     @staticmethod
     def _row_to_group_dict(row: tuple, include_page_count: bool = False) -> dict[str, Any] | None:
-        """Convert database row to product group dictionary."""
         if not row:
             return None
 
@@ -914,7 +1115,6 @@ class DatabaseManager:
 
     @staticmethod
     def _row_to_group_page_dict(row: tuple) -> dict[str, Any] | None:
-        """Convert database row from v_latest_group_prices view to dictionary."""
         if not row:
             return None
 

@@ -18,6 +18,7 @@ class BaseProduct:
     has_promotion: bool = False  # Is product currently on promotion/sale
     discount_percentage: float | None = None  # Discount % if on promotion
     promotion_text: str | None = None  # e.g., "2 for 1", "Save 50%"
+    promotion_starts_at: datetime | None = None  # Promotion start date
     promotion_ends_at: datetime | None = None  # Promotion end date
 
     sku: str | None = None  # Store's internal product code
@@ -29,6 +30,7 @@ class BaseProduct:
     tags: list[str] = field(default_factory=list)  # Product tags/labels
 
     availability: bool = True  # Is product available for purchase
+    is_marketplace_only: bool = False
     stock_quantity: int | None = None  # Number of items in stock
     availability_text: str | None = None  # e.g., "In stock", "Low stock"
     max_order_quantity: int | None = None  # Maximum items per order
@@ -68,7 +70,8 @@ class BaseProduct:
     delivery_time: str | None = None  # e.g., "2-3 days"
 
     provider: str | None = None  # Provider name (e.g., "store_a", "store_b")
-    extraction_method: str | None = None  # "json-ld"
+    offer_selection_strategy: str | None = None  # Strategy used for multi-offer JSON-LD
+    extraction_method: str | None = None  # "json-ld" or "selectors"
     extracted_at: datetime | None = None  # When data was extracted
     raw_data: dict[str, Any] = field(default_factory=dict)  # Original raw data
 
@@ -83,6 +86,9 @@ class BaseProduct:
             "has_promotion": self.has_promotion,
             "discount_percentage": self.discount_percentage,
             "promotion_text": self.promotion_text,
+            "promotion_starts_at": self.promotion_starts_at.isoformat()
+            if self.promotion_starts_at
+            else None,
             "promotion_ends_at": self.promotion_ends_at.isoformat()
             if self.promotion_ends_at
             else None,
@@ -93,6 +99,7 @@ class BaseProduct:
             "category": self.category,
             "tags": self.tags,
             "availability": self.availability,
+            "is_marketplace_only": self.is_marketplace_only,
             "stock_quantity": self.stock_quantity,
             "availability_text": self.availability_text,
             "max_order_quantity": self.max_order_quantity,
@@ -117,6 +124,7 @@ class BaseProduct:
             "free_shipping": self.free_shipping,
             "delivery_time": self.delivery_time,
             "provider": self.provider,
+            "offer_selection_strategy": self.offer_selection_strategy,
             "extraction_method": self.extraction_method,
             "extracted_at": self.extracted_at.isoformat() if self.extracted_at else None,
         }
@@ -125,6 +133,8 @@ class BaseProduct:
     def from_dict(cls, data: dict[str, Any]) -> "BaseProduct":
         if data.get("extracted_at") and isinstance(data["extracted_at"], str):
             data["extracted_at"] = datetime.fromisoformat(data["extracted_at"])
+        if data.get("promotion_starts_at") and isinstance(data["promotion_starts_at"], str):
+            data["promotion_starts_at"] = datetime.fromisoformat(data["promotion_starts_at"])
         if data.get("promotion_ends_at") and isinstance(data["promotion_ends_at"], str):
             data["promotion_ends_at"] = datetime.fromisoformat(data["promotion_ends_at"])
 

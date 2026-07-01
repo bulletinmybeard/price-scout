@@ -4,7 +4,7 @@ from unittest.mock import patch
 
 import yaml
 
-from src.cli.commands.track import auto_associate_with_groups
+from src.price_tracker.group_helpers import auto_associate_with_groups
 
 
 class TestAutoAssociateWithGroups:

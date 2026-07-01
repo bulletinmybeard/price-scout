@@ -23,6 +23,9 @@ else
     echo "✓ DuckDB database found: /data/price_scout.duckdb"
 fi
 
+# Run database migrations with auto-backup
+/run_migrations.sh || exit 1
+
 echo ""
 echo "Services starting..."
 echo "  - Xvfb (Virtual Display): :99"

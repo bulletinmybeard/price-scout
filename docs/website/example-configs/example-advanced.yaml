@@ -1,0 +1,129 @@
+# Example Provider Configuration - Advanced Features
+# This demonstrates advanced configuration options
+#
+# DISCLAIMER: This is a fictional example for educational purposes.
+# Always ensure your use complies with website Terms of Service and applicable laws.
+
+name: "example_store_advances"
+country: "GB"
+base_url: "https://example-retailer-store.com"
+
+browser:
+  headless: true
+  wait_strategy: "networkidle"  # Wait until network is idle
+  wait_delay: 2
+  timeout: 30000  # 30 second timeout
+
+extraction:
+  priority: ["json-ld", "opengraph"]  # Try JSON-LD first, fallback to OpenGraph
+
+  json_ld:
+    default_availability_when_missing: false  # Conservative approach
+
+    # Advanced field mappings with multiple fallbacks and defaults
+    field_mappings:
+      # Product name with multiple fallback paths
+      name: ["name", "headline", "offers.name"]
+
+      # Description with default if missing
+      description: ["description", {"default": "No description available"}]
+
+      # Brand with nested path and default
+      brand: ["brand.name", "brand", "manufacturer.name", {"default": "Generic"}]
+      manufacturer: ["manufacturer.name", "brand.name", {"default": "Unknown"}]
+
+      # Pricing with multiple offer types
+      price: [
+        "offers.price",
+        "offers.lowPrice",
+        "offers[0].price",  # First offer in array
+        {"default": 0.0}
+      ]
+
+      currency: ["offers.priceCurrency", {"default": "GBP"}]
+      original_price: ["offers.highPrice", "offers.price"]
+
+      # Product identifiers with fallbacks
+      sku: ["sku", "offers.sku", "productID"]
+      gtin: ["gtin13", "gtin", "ean", {"default": null}]
+
+      # Images - handle both single image and array
+      image_url: [
+        "image[0]",  # First image in array
+        "image",     # Single image URL
+        "image.url",
+        {"default": null}
+      ]
+
+      # Availability with complex path
+      availability: ["offers.availability", "offers[0].availability"]
+
+      # Additional product details
+      category: ["category", "productCategory"]
+      rating: ["aggregateRating.ratingValue"]
+      review_count: ["aggregateRating.reviewCount"]
+      weight: ["weight.value"]
+      color: ["color", "variant.color"]
+
+  # OpenGraph fallback (if JSON-LD not available)
+  opengraph:
+    enabled: true
+    mappings:
+      name: "og:title"
+      description: "og:description"
+      image_url: "og:image"
+      price: "product:price:amount"
+      currency: "product:price:currency"
+
+# Multiple transformations
+transformations:
+  # Split categories by comma or semicolon
+  category:
+    type: "split"
+    delimiter: "[,;]"  # Regex pattern
+    trim: true  # Remove whitespace from each item
+
+  # Clean product name
+  name:
+    - type: "regex"
+      pattern: "\\s+"  # Multiple spaces
+      replacement: " "
+    - type: "regex"
+      pattern: "^\\s+|\\s+$"  # Leading/trailing spaces
+      replacement: ""
+
+  # Parse price (handle various formats)
+  price:
+    type: "price"
+    currency_symbols: ["£", "$", "€"]
+    decimal_separator: "."
+    thousands_separator: ","
+
+  # Normalize availability status
+  availability:
+    type: "map"
+    mappings:
+      "InStock": "available"
+      "OutOfStock": "unavailable"
+      "PreOrder": "preorder"
+      "Discontinued": "unavailable"
+    default: "unknown"
+
+# Offer selection strategy (when multiple offers exist)
+offer_selection:
+  strategy: "cheapest"  # Options: first, cheapest, first_complete
+  fallback_strategy: "first"  # If cheapest fails, use first offer
+
+# Respectful rate limiting
+rate_limit:
+  requests_per_minute: 20
+  delay_between_requests: 3
+  max_retries: 2
+  retry_delay: 5
+
+# User agent rotation (optional, for distributed systems)
+user_agent_rotation:
+  enabled: false  # Don't rotate by default
+  agents:
+    - "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+    - "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"

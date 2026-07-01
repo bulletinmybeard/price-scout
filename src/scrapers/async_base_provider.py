@@ -348,13 +348,15 @@ class AsyncBaseProvider(ABC):
         self,
         url: str,
         wait_for_selector: str | None = None,
-        timeout: int = 60000,
+        timeout: int | None = None,
         wait_until: PlaywrightWaitUntil = "domcontentloaded",
         warm_up: bool = True,
     ) -> Page | None:
-        """Fetch a web page using Playwright."""
         try:
             url = self._clean_url(url)
+
+            if timeout is None:
+                timeout = self.config.scraping.timeout_seconds * 1000
 
             page = await self.create_page()
 
@@ -366,7 +368,10 @@ class AsyncBaseProvider(ABC):
             if self.headless and warm_up and self.base_url:
                 try:
                     logger.debug(f"Warm-up: visiting homepage {self.base_url}")
-                    await page.goto(self.base_url, wait_until="domcontentloaded", timeout=10000)
+                    warmup_timeout = min(10000, timeout // 2)
+                    await page.goto(
+                        self.base_url, wait_until="domcontentloaded", timeout=warmup_timeout
+                    )
 
                     # Simulate brief homepage interaction
                     await asyncio.sleep(_rng.uniform(0.5, 1.5))
@@ -487,7 +492,6 @@ class AsyncBaseProvider(ABC):
 
     @staticmethod
     def extract_json_ld(html: str, wrapper_config: dict | None = None) -> dict | None:
-        """Extract JSON-LD structured data from HTML."""
         try:
             soup = BeautifulSoup(html, "lxml")
 
@@ -551,7 +555,6 @@ class AsyncBaseProvider(ABC):
 
     @staticmethod
     def normalize_json_ld_product(data: dict) -> dict:
-        """Convert JSON-LD Product schema to normalized product dict."""
         product = {
             "name": data.get("name", ""),
             "description": data.get("description", ""),
@@ -639,7 +642,6 @@ class AsyncBaseProvider(ABC):
             logger.debug(f"Failed to save screenshot: {e}")
 
     def _get_user_agent(self) -> str:
-        """Generate user agent based on configuration."""
         # Check if rotation is enabled
         if not self.config.scraping.user_agent_rotation:
             return (
@@ -670,7 +672,6 @@ class AsyncBaseProvider(ABC):
 
     @staticmethod
     def _parse_user_agent_info(ua: str) -> UserAgentInfo:
-        """Extract platform, vendor, and browser info from UA string."""
         ua_lower = ua.lower()
 
         if "windows" in ua_lower or "win64" in ua_lower or "win32" in ua_lower:
@@ -707,7 +708,6 @@ class AsyncBaseProvider(ABC):
         }
 
     def _get_plugins_script(self, browser: str) -> str:
-        """Generate browser-specific plugins array for anti-fingerprinting."""
         if browser == "chromium":
             return """
         Object.defineProperty(navigator, 'plugins', {
@@ -743,7 +743,6 @@ class AsyncBaseProvider(ABC):
         """
 
     def _get_webgl_script(self, platform: str) -> str:
-        """Generate platform-specific WebGL vendor/renderer for anti-fingerprinting."""
         if "Win" in platform:
             # Windows
             return """

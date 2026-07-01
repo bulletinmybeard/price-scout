@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 import re
 from typing import Any
 from urllib.parse import urlparse
@@ -13,6 +14,7 @@ from src.config.config_loader import (
     is_docker_environment,
     load_typed_config,
 )
+from src.config.models import ProviderConfig
 from src.database.db_manager import DatabaseManager
 from src.utils.fuzzy_matcher import format_similarity_percentage
 
@@ -28,7 +30,7 @@ def get_console(force_colors: bool | None = None) -> Console:
     return Console(force_terminal=force_colors) if force_colors else Console()
 
 
-def get_db_url(config_path: str | None = None) -> str:
+def get_db_url(config_path: str | Path | None = None) -> str:
     """
     Get database URL from config using type-safe Pydantic models.
 
@@ -56,6 +58,68 @@ def get_db_url(config_path: str | None = None) -> str:
             db_url = str(user_dir / "database.duckdb")
 
     return db_url
+
+
+def get_max_parallel_workers() -> int:
+    """Get configured parallel worker count for scrape operations."""
+    config = load_typed_config()
+    return config.cli.max_parallel_workers
+
+
+def get_data_directory() -> Path:
+    """Get data directory based on environment."""
+    if is_docker_environment():
+        return Path("/app/data")
+    elif is_development_environment():
+        return Path.cwd() / "data"
+    return get_user_directory() / "data"
+
+
+def resolve_url_file_path(file_path: str) -> Path:
+    """Resolve URL file path across different installation environments.
+
+    Resolution order:
+    1. Absolute path (as-is)
+    2. Expand ~ to home directory
+    3. Relative to current working directory
+    4. Check in data directory (Docker: /app/data, dev: ./data, global: ~/.price-scout/data)
+    5. Check in user directory (~/.price-scout/)
+
+    Raises:
+        FileNotFoundError: If file cannot be found in any location
+    """
+    path = Path(file_path)
+
+    if path.is_absolute():
+        if path.exists():
+            return path
+        raise FileNotFoundError(f"URL file not found: {path}")
+
+    # Expand ~ to home directory
+    expanded = path.expanduser()
+    if expanded != path and expanded.exists():
+        return expanded
+
+    # Relative to current working directory
+    cwd_path = Path.cwd() / path
+    if cwd_path.exists():
+        return cwd_path
+
+    # Check data directory (environment-aware)
+    data_path = get_data_directory() / path.name
+    if data_path.exists():
+        return data_path
+
+    # Check user directory (~/.price-scout/)
+    user_path = get_user_directory() / path.name
+    if user_path.exists():
+        return user_path
+
+    # Not found!
+    searched = [str(cwd_path), str(data_path), str(user_path)]
+    raise FileNotFoundError(
+        f"URL file '{file_path}' not found. Searched:\n" + "\n".join(f"  - {p}" for p in searched)
+    )
 
 
 def extract_amount_from_name(product_name: str) -> str | None:
@@ -126,7 +190,7 @@ def extract_amount_from_name(product_name: str) -> str | None:
     return None
 
 
-def detect_provider_from_url(url: str, factory) -> tuple[str | None, dict[str, Any] | None]:
+def detect_provider_from_url(url: str, factory) -> tuple[str | None, ProviderConfig | None]:
     """Detect provider name from URL by matching scheme+host against base_url configs."""
     parsed_url = urlparse(url)
     url_base = f"{parsed_url.scheme}://{parsed_url.netloc}".lower()

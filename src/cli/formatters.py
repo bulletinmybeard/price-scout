@@ -1,3 +1,4 @@
+from datetime import datetime
 import json
 from typing import Any
 
@@ -83,6 +84,36 @@ def _format_promotion(has_promotion: bool, discount_pct: float | None = None) ->
         return "✓ Yes"
     else:
         return "✗ No"
+
+
+def _format_promotion_dates(
+    has_promotion: bool,
+    starts_at: datetime | None,
+    ends_at: datetime | None,
+    url: str | None = None,
+    is_marketplace_only: bool = False,
+) -> str:
+    """Format promotion with date range and optional link: ✓ → 01.12 - 07.12 or ✗ No"""
+    if is_marketplace_only:
+        if url:
+            return f"[link={url}]→ Marketplace[/link]"
+        return "→ Marketplace"
+
+    if not has_promotion:
+        return "✗ No"
+
+    if starts_at and ends_at:
+        date_str = f"{starts_at.strftime('%d.%m')} - {ends_at.strftime('%d.%m')}"
+    elif ends_at:
+        date_str = f"until {ends_at.strftime('%d.%m')}"
+    elif starts_at:
+        date_str = f"from {starts_at.strftime('%d.%m')}"
+    else:
+        date_str = "Yes"
+
+    if url:
+        return f"[link={url}]→ {date_str}[/link]"
+    return f"→ {date_str}"
 
 
 def _truncate_text(text: str, max_length: int, suffix: str = "...") -> str:
@@ -437,33 +468,37 @@ def _calculate_change_indicators(
         else:
             indicators.append("✓ Back in stock")
 
-    latest_promo = latest.get("has_promotion")
-    previous_promo = previous.get("has_promotion")
-
-    if latest_promo != previous_promo:
-        if latest_promo:
-            indicators.append("🏷️ New promo")
-        else:
-            indicators.append("✗ Promo ended")
-
     return ", ".join(indicators) if indicators else "✓ Same"
 
 
 def display_comparison_table_with_changes(
-    snapshots_with_changes: dict[str, dict[str, dict[str, Any] | None]], console
+    snapshots_with_changes: dict[str, dict[str, dict[str, Any] | None]],
+    console,
+    failed_urls: set[str] | None = None,
 ):
     """Display comparison table showing latest snapshot per URL with change indicators."""
+    if failed_urls is None:
+        failed_urls = set()
 
     table = Table(
         title="Product Price Comparison",
-        headers=["Provider", "Product", "Amount", "Price", "Change", "Available", "Scraped At"],
+        headers=[
+            "Provider",
+            "Product",
+            "Amount",
+            "Price",
+            "Promotion",
+            "Change",
+            "Available",
+            "Scraped At",
+        ],
     )
 
     total_products = 0
     providers = set()
     price_changes = {"increased": 0, "decreased": 0, "new": 0, "promo": 0}
 
-    for _url, snapshots in snapshots_with_changes.items():
+    for url, snapshots in snapshots_with_changes.items():
         latest = snapshots.get("latest")
         previous = snapshots.get("previous")
 
@@ -474,6 +509,9 @@ def display_comparison_table_with_changes(
         provider = latest.get("provider", "unknown")
         providers.add(provider)
 
+        # Check if this URL failed to scrape in this session
+        scrape_failed = url in failed_urls
+
         # Format provider name for display (replace underscores, title case)
         provider_display = provider.replace("_", " ").title()
 
@@ -481,25 +519,50 @@ def display_comparison_table_with_changes(
         product_name = _truncate_text(name, 40)
         amount_str = _get_product_amount(latest)
         price_str = _format_price(latest.get("current_price"), latest.get("currency", "EUR"))
-        change_str = _calculate_change_indicators(latest, previous)
 
-        if "✗ NEW" in change_str:
-            price_changes["new"] += 1
-        if "↑" in change_str:
-            price_changes["increased"] += 1
-        if "↓" in change_str:
-            price_changes["decreased"] += 1
-        if "🏷️" in change_str or "promo" in change_str.lower():
-            price_changes["promo"] += 1
+        if scrape_failed:
+            change_str = "-"
+            availability_str = "?"
+        else:
+            change_str = _calculate_change_indicators(latest, previous)
 
-        availability_str = _format_boolean(latest.get("availability", False))
+            if "✗ NEW" in change_str:
+                price_changes["new"] += 1
+            if "↑" in change_str:
+                price_changes["increased"] += 1
+            if "↓" in change_str:
+                price_changes["decreased"] += 1
+
+            latest_promo = latest.get("has_promotion", False)
+            previous_promo = previous.get("has_promotion", False) if previous else False
+            if latest_promo and not previous_promo:
+                price_changes["promo"] += 1
+
+            availability_str = _format_boolean(latest.get("availability", False))
+
         scraped_at = _format_timestamp(latest.get("scraped_at", "N/A"))
+
+        promo_starts = latest.get("promotion_starts_at")
+        promo_ends = latest.get("promotion_ends_at")
+        if promo_starts and isinstance(promo_starts, str):
+            promo_starts = datetime.fromisoformat(promo_starts)
+        if promo_ends and isinstance(promo_ends, str):
+            promo_ends = datetime.fromisoformat(promo_ends)
+
+        promotion_str = _format_promotion_dates(
+            latest.get("has_promotion", False),
+            promo_starts,
+            promo_ends,
+            url=latest.get("url"),
+            is_marketplace_only=latest.get("is_marketplace_only", False),
+        )
 
         table.add_row(
             provider_display,
             product_name,
             amount_str,
             price_str,
+            promotion_str,
             change_str,
             availability_str,
             scraped_at,

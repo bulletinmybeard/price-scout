@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "price-scout"
-version = "0.8.5b1"
+version = "1.2.0b1"
 description = "Self-hosted price tracker with local data storage"
 authors = [
     "Robin Schulz <bulletinmybeard@gmail.com>"
@@ -33,25 +33,36 @@ include = [
 [tool.poetry.dependencies]
 python = "^3.12"
 duckdb = "^1.4.2"
-PyYAML = "^6.0.1"
-requests = "^2.31.0"
-beautifulsoup4 = "^4.12.2"
+beautifulsoup4 = "^4.14.2"
 lxml = "^6.0.2"
 fake-useragent = "^2.2.0"
-click = "^8.1.7"
+click = "^8.3.1"
 APScheduler = "^3.11.1"
 # Playwright version MUST match Dockerfile.xvfb base image version
 # When updating: update both pyproject.toml AND Dockerfile.xvfb
 playwright = "1.56.0"
 httpx = "^0.28.1"
-selectolax = "^0.4.0"
-chalkbox = "^2.1.1"
+chalkbox = "^2.2.0"
 croniter = "^6.0.0"
 pyld = "^2.0.4"
-pydantic = "^2.12.4"
 pydantic-settings = "^2.12.0"
 mdformat-gfm = "^1.0.0"
 
+[tool.poetry.dependencies.pydantic]
+version = "^2.12.5"
+python = ">=3.12.0,<3.15"
+
+[tool.poetry.dependencies.selectolax]
+version = "^0.4.2"
+python = ">=3.12.0,<3.14"
+
+[tool.poetry.dependencies.requests]
+version = "^2.32.5"
+python = ">=3.12.0,<3.15"
+
+[tool.poetry.dependencies.PyYAML]
+version = "^6.0.3"
+python = ">=3.12.0,<3.15"
 [tool.poetry.group.dev.dependencies]
 pytest = "^7.4.3"
 pytest-cov = "^4.1.0"
@@ -113,6 +124,8 @@ ignore = [
 "tests/*" = ["S101", "S603", "S607"]     # Allow assert and subprocess in tests
 "examples/*" = ["S311", "S603", "S607"]  # Allow pseudo-random generators, subprocess in examples
 "scripts/*" = ["S603", "S607"]           # Allow subprocess in scripts
+"src/database/db_manager.py" = ["S608"]  # Safe parameterized queries with placeholders
+"src/database/migration_runner.py" = ["S608"]  # Safe parameterized queries with integer params
 
 [tool.ruff.lint.isort]
 combine-as-imports = true

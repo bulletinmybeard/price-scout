@@ -353,7 +353,6 @@ def _check_cross_category_duplicates(variants: dict) -> list[str]:
 
 
 def load_variant_config(config_path: str | Path | None = None) -> dict:
-    """Load variant configuration from YAML file."""
     if config_path is None:
         return _load_default_variants()
 
@@ -412,7 +411,6 @@ def merge_variant_configs(base: dict, override: dict) -> dict:
 
 
 def normalize_unit_code(unit: str) -> str:
-    """Normalize UN/CEFACT codes and common variations to human-readable units."""
     if not unit:
         return ""
 
@@ -432,7 +430,6 @@ def normalize_unit_code(unit: str) -> str:
 
 
 def _normalize_un_cefact_in_text(text: str) -> str:
-    """Replace all UN/CEFACT codes in text with normalized units."""
     if not text:
         return text
 
@@ -535,7 +532,6 @@ def extract_variants(
     custom_variants: dict | None = None,
     language: str | None = None,
 ) -> dict[str, str | None]:
-    """Extract variant information (color, flavor, type) from text."""
     if not text:
         return {"variant_color": None, "variant_flavor": None, "variant_type": None}
 
@@ -579,7 +575,6 @@ def parse_product_details(
     language: str | None = None,
     country: str | None = None,
 ) -> dict[str, Any]:
-    """Parse all product details from name, weight, and volume fields."""
     result: dict[str, Any] = {
         "amount_value": None,
         "amount_unit": None,
