@@ -117,9 +117,7 @@ COPY --from=builder /build/config.yaml ./config.yaml
 COPY --from=builder /build/pyproject.toml ./pyproject.toml
 COPY --from=builder /build/poetry.lock ./poetry.lock
 
-# Suppress Poetry virtualenv warnings
-RUN poetry config virtualenvs.create false && \
-    poetry config warnings.export false
+RUN poetry config virtualenvs.create false
 
 COPY docker/scripts/entrypoint.sh /entrypoint.sh
 COPY docker/scripts/run_migrations.sh /run_migrations.sh
