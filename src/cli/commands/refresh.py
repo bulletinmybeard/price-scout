@@ -48,9 +48,13 @@ def refresh(ctx: click.Context, providers, group, url):
         price-scout refresh --url "https://www.webshop-a/products/..."
     """
     db_manager = DatabaseManager(get_db_url(), read_only=False)
-    tracker = PriceTracker(db_manager)
     provider_config_override = ctx.obj.get("provider_config")
-    factory = get_factory(provider_config=provider_config_override)
+    config_file = ctx.obj.get("config_file")
+    factory = get_factory(
+        config_path=str(config_file) if config_file else None,
+        provider_config=provider_config_override,
+    )
+    tracker = PriceTracker(db_manager, factory=factory)
 
     urls_to_refresh = []
 
@@ -79,7 +83,6 @@ def refresh(ctx: click.Context, providers, group, url):
 
         # Filter by provider (if specified)
         if providers:
-            factory = get_factory()
             available_providers = factory.list_providers()
 
             provider_list = [p.strip() for p in providers.split(",")]

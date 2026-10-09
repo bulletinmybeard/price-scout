@@ -172,18 +172,21 @@ class ProviderFactory:
         self.full_config, self.config = self._load_config()
 
 
-# Global factory instance
-_factory_instance: ProviderFactory | None = None
+# Keyed by (config_path, provider_config). A no-arg call does not reuse a
+# factory built for a different config or override file.
+_factory_cache: dict[tuple[str | None, str | None], ProviderFactory] = {}
 
 
 def get_factory(
     config_path: str | None = None, provider_config: str | None = None
 ) -> ProviderFactory:
-    global _factory_instance
+    key = (config_path, provider_config)
+    cached = _factory_cache.get(key)
+    if cached is None:
+        cached = ProviderFactory(config_path=config_path, provider_config_override=provider_config)
+        _factory_cache[key] = cached
+    return cached
 
-    if _factory_instance is None or config_path is not None or provider_config is not None:
-        _factory_instance = ProviderFactory(
-            config_path=config_path, provider_config_override=provider_config
-        )
 
-    return _factory_instance
+def clear_factory_cache() -> None:
+    _factory_cache.clear()

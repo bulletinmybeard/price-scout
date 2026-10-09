@@ -7,10 +7,12 @@ from types import FrameType
 from chalkbox.logging.bridge import get_logger, setup_logging
 import click
 
+from src import __version__
 from src.cli.commands.compare import compare
 from src.cli.commands.config_cmd import config
 from src.cli.commands.database import db
 from src.cli.commands.groups import groups
+from src.cli.commands.history import history
 from src.cli.commands.refresh import refresh
 from src.cli.commands.track import track
 from src.cli.helpers import get_db_url
@@ -72,7 +74,7 @@ def _cleanup_on_exit():
     default=False,
     help="Enable debug logging output (overrides config dev_mode)",
 )
-@click.version_option(version="1.2.0")
+@click.version_option(version=__version__)
 @click.pass_context
 def cli(ctx: click.Context, config_file: Path | str, provider_config: str, debug: bool):
     """Price Scout - Modular browser automation toolkit for price monitoring."""
@@ -148,6 +150,7 @@ cli.add_command(db)
 
 cli.add_command(track)
 cli.add_command(refresh)
+cli.add_command(history)
 
 
 if __name__ == "__main__":

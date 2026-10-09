@@ -60,14 +60,14 @@ class TestDatabaseConfig:
         config = DatabaseConfig(url="./new_database.duckdb")
         assert config.url == "./new_database.duckdb"
 
-    def test_parquet_path_creates_parent_directory(self):
-        """Test that parent directory is created for parquet_path."""
+    def test_parquet_path_does_not_create_directory(self):
+        """Loading config must not create the parquet directory."""
         with TemporaryDirectory() as tmpdir:
             parquet_path = Path(tmpdir) / "nested" / "dir" / "data.parquet"
 
             config = DatabaseConfig(parquet_path=str(parquet_path))
 
-            assert parquet_path.parent.exists()
+            assert not parquet_path.parent.exists()
             assert config.parquet_path == str(parquet_path)
 
     def test_export_to_parquet_boolean(self):
@@ -267,14 +267,14 @@ class TestScrapingConfig:
         with pytest.raises(ValidationError):
             ScrapingConfig(viewport_height=10000)
 
-    def test_screenshots_directory_created(self):
-        """Test that screenshots directory is created."""
+    def test_screenshots_directory_not_created_on_load(self):
+        """Loading config must not create the screenshots directory."""
         with TemporaryDirectory() as tmpdir:
             screenshots_path = Path(tmpdir) / "test_screenshots"
 
             config = ScrapingConfig(screenshots_dir=str(screenshots_path))
 
-            assert screenshots_path.exists()
+            assert not screenshots_path.exists()
             assert config.screenshots_dir == str(screenshots_path)
 
 

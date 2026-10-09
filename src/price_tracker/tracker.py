@@ -15,9 +15,9 @@ BACKGROUND_CLEANUP_DELAY = 0.2
 class PriceTracker:
     """Orchestrates price tracking across multiple store providers."""
 
-    def __init__(self, db_manager: DatabaseManager, headless: bool | None = None):
+    def __init__(self, db_manager: DatabaseManager, headless: bool | None = None, factory=None):
         self.db_manager = db_manager
-        self.factory = get_factory()
+        self.factory = factory if factory is not None else get_factory()
 
         if headless is None:
             scraping_config = self.factory.full_config.get("scraping", {})

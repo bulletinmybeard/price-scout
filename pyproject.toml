@@ -37,16 +37,13 @@ beautifulsoup4 = "^4.14.2"
 lxml = "^6.0.2"
 fake-useragent = "^2.2.0"
 click = "^8.3.1"
-APScheduler = "^3.11.1"
 # Playwright version MUST match Dockerfile.xvfb base image version
 # When updating: update both pyproject.toml AND Dockerfile.xvfb
 playwright = "1.56.0"
 httpx = "^0.28.1"
 chalkbox = "^2.2.0"
-croniter = "^6.0.0"
 pyld = "^2.0.4"
 pydantic-settings = "^2.12.0"
-mdformat-gfm = "^1.0.0"
 
 [tool.poetry.dependencies.pydantic]
 version = "^2.12.5"
@@ -54,7 +51,7 @@ python = ">=3.12.0,<3.15"
 
 [tool.poetry.dependencies.selectolax]
 version = "^0.4.2"
-python = ">=3.12.0,<3.14"
+python = ">=3.12,<3.15"
 
 [tool.poetry.dependencies.requests]
 version = "^2.32.5"
@@ -71,8 +68,8 @@ pytest-asyncio = "^0.23.0"
 ruff = "^0.14.1"
 mypy = "^1.18.2"
 mdformat = "^1.0.0"
+mdformat-gfm = "^1.0.0"
 types-pyyaml = "^6.0.12"
-types-croniter = "^6.0.0"
 types-requests = "^2.32.4"
 
 [tool.poetry.scripts]

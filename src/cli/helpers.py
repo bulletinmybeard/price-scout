@@ -191,24 +191,26 @@ def extract_amount_from_name(product_name: str) -> str | None:
 
 
 def detect_provider_from_url(url: str, factory) -> tuple[str | None, ProviderConfig | None]:
-    """Detect provider name from URL by matching scheme+host against base_url configs."""
+    """Detect provider name from URL. The longest matching base_url wins."""
     parsed_url = urlparse(url)
     url_base = f"{parsed_url.scheme}://{parsed_url.netloc}".lower()
+    url_lower = url.lower()
 
+    matches: list[tuple[int, str, ProviderConfig]] = []
     for provider_name, provider_config in factory.config.items():
-        # provider_config is now a ProviderConfig Pydantic model, use attribute access
         base_url = provider_config.base_url.lower() if provider_config.base_url else ""
-
         if not base_url:
             continue
+        if url_base == base_url or url_lower.startswith(base_url):
+            matches.append((len(base_url), provider_name, provider_config))
 
-        if url_base == base_url:
-            return provider_name, provider_config
+    if not matches:
+        return None, None
 
-        if url.lower().startswith(base_url):
-            return provider_name, provider_config
-
-    return None, None
+    # Stable: equal lengths keep insertion order (sort is stable).
+    matches.sort(key=lambda item: item[0], reverse=True)
+    _, provider_name, provider_config = matches[0]
+    return provider_name, provider_config
 
 
 def prompt_group_selection(

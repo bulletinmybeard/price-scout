@@ -85,17 +85,6 @@ class ScrapingConfig(BaseModel):
         description="Screenshot directory",
     )
 
-    @field_validator("screenshots_dir")
-    @classmethod
-    def validate_screenshots_dir(cls, value: str) -> str:
-        """Validate and create screenshots directory if `save_screenshots` is enabled."""
-        if value:
-            path = Path(value)
-            if path.is_absolute() and not path.parent.exists():
-                return value
-            path.mkdir(parents=True, exist_ok=True)
-        return value
-
 
 class WaitStrategy(str, Enum):
     """Supported Playwright wait strategies."""
@@ -107,11 +96,21 @@ class WaitStrategy(str, Enum):
 
 
 class ExtractionMethod(str, Enum):
-    """Supported data extraction methods."""
+    """Top-level extraction methods accepted in provider `priority`."""
 
     JSON_LD = "json-ld"
-    CSS = "css"
-    XPATH = "xpath"
+    SELECTORS = "selectors"
+
+    @classmethod
+    def normalize(cls, method: str) -> "ExtractionMethod | None":
+        """Map a priority entry to a method. `css` and `xpath` are selector aliases."""
+        aliases = {
+            "json-ld": cls.JSON_LD,
+            "selectors": cls.SELECTORS,
+            "css": cls.SELECTORS,
+            "xpath": cls.SELECTORS,
+        }
+        return aliases.get(method)
 
 
 class ProviderConfig(BaseModel):
@@ -162,10 +161,11 @@ class ProviderConfig(BaseModel):
         default_factory=dict,
         description=(
             "Extraction configuration supporting multiple methods:\n"
-            "- priority: list[str] - extraction methods to try in order (e.g., ['json-ld', 'css'])\n"
+            "- priority: list[str] - methods to try in order ('json-ld', 'selectors')\n"
             "- json_ld: dict - JSON-LD extraction config with field_mappings\n"
             "- css_selectors: dict - CSS/XPath selectors per field\n"
-            "Example: {'priority': ['json-ld', 'css'], 'css_selectors': {'name': ['.product-title']}}"
+            "Example: {'priority': ['json-ld', 'selectors'], "
+            "'css_selectors': {'name': ['.product-title']}}"
         ),
     )
     transformations: dict[str, Any] = Field(
@@ -224,16 +224,6 @@ class DatabaseConfig(BaseModel):
             return str(path.resolve())
 
         return value
-
-    @field_validator("parquet_path")
-    @classmethod
-    def validate_parquet_path(cls, v: str) -> str:
-        """Validate and normalize Parquet file path."""
-        path = Path(v)
-
-        path.parent.mkdir(parents=True, exist_ok=True)
-
-        return str(path)
 
 
 class CLIConfig(BaseModel):

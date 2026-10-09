@@ -64,8 +64,13 @@ def compare_groups(_ctx: click.Context, group_names: tuple[str, ...], refresh: b
         if refresh:
             click.echo(f"Refreshing prices for {len(group_list)} groups...")
 
-            factory = get_factory()
-            tracker = PriceTracker(db_manager)
+            config_file = _ctx.obj.get("config_file") if _ctx.obj else None
+            provider_config = _ctx.obj.get("provider_config") if _ctx.obj else None
+            factory = get_factory(
+                config_path=str(config_file) if config_file else None,
+                provider_config=provider_config,
+            )
+            tracker = PriceTracker(db_manager, factory=factory)
 
             total_success = 0
             total_failed = 0

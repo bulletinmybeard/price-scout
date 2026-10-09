@@ -7,7 +7,7 @@ from chalkbox.logging.bridge import get_logger
 from playwright.async_api import Page
 
 from src.cli.helpers import get_db_url
-from src.config.models import ProviderConfig
+from src.config.models import ExtractionMethod, ProviderConfig
 from src.database.db_manager import DatabaseManager
 from src.providers.base_product import BaseProduct
 from src.providers.field_mapper import FieldMapper
@@ -92,18 +92,19 @@ class ConfigurableProvider(AsyncBaseProvider):
 
                 product = None
                 for method in priority:
-                    if method == "json-ld":
+                    normalized = ExtractionMethod.normalize(str(method))
+                    if normalized is ExtractionMethod.JSON_LD:
                         product = await self._extract_from_json_ld(html_content, url, page)
                         if product:
-                            product.extraction_method = "json-ld"
-                            logger.debug("✓ Product extracted via JSON-LD")
+                            product.extraction_method = ExtractionMethod.JSON_LD.value
+                            logger.debug("Product extracted via JSON-LD")
                             break
                         logger.debug("JSON-LD extraction failed, trying next method")
-                    elif method == "selectors":
+                    elif normalized is ExtractionMethod.SELECTORS:
                         product = await self._extract_from_selectors(html_content, url, page)
                         if product:
-                            product.extraction_method = "selectors"
-                            logger.debug("✓ Product extracted via selectors")
+                            product.extraction_method = ExtractionMethod.SELECTORS.value
+                            logger.debug("Product extracted via selectors")
                             break
                         logger.debug("Selector extraction failed, trying next method")
                     else:

@@ -7,8 +7,7 @@ import pytest
 import yaml
 
 from src.config.models import ProviderConfig
-import src.providers.provider_factory as pf_module
-from src.providers.provider_factory import ProviderFactory, get_factory
+from src.providers.provider_factory import ProviderFactory, clear_factory_cache, get_factory
 
 
 @pytest.fixture
@@ -241,16 +240,21 @@ class TestReloadConfig:
 class TestGetFactory:
     """Tests for get_factory global factory function."""
 
-    def test_get_factory_returns_singleton(self, temp_config_dir: tuple[Path, Path]) -> None:
-        """Test that get_factory returns same instance."""
+    def test_get_factory_returns_same_instance_for_same_args(
+        self, temp_config_dir: tuple[Path, Path]
+    ) -> None:
+        """Same config path returns the same factory. A no-arg call does not."""
         _, config_path = temp_config_dir
 
-        pf_module._factory_instance = None
+        clear_factory_cache()
 
         factory1 = get_factory(config_path=str(config_path))
-        factory2 = get_factory()
+        factory2 = get_factory(config_path=str(config_path))
+        default_factory = get_factory()
 
         assert factory1 is factory2
+        assert default_factory is not factory1
+        assert get_factory() is default_factory
 
     def test_get_factory_with_new_config_path_creates_new_instance(
         self, temp_config_dir: tuple[Path, Path]
@@ -272,9 +276,7 @@ class TestGetFactory:
         with open(config_path_2, "w", encoding="utf-8") as f:
             yaml.safe_dump(config_data_2, f)
 
-        import src.providers.provider_factory as pf_module
-
-        pf_module._factory_instance = None
+        clear_factory_cache()
 
         factory1 = get_factory(config_path=str(config_path))
         factory2 = get_factory(config_path=str(config_path_2))

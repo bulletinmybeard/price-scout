@@ -316,9 +316,13 @@ def track(
             db_manager = DatabaseManager(get_db_url(), read_only=False)
             # Pass None if user didn't specify, so PriceTracker reads from config.yaml
             headless_mode = None if headed is None else not headed
-            tracker = PriceTracker(db_manager, headless=headless_mode)
             provider_config_override = ctx.obj.get("provider_config")
-            factory = get_factory(provider_config=provider_config_override)
+            config_file = ctx.obj.get("config_file")
+            factory = get_factory(
+                config_path=str(config_file) if config_file else None,
+                provider_config=provider_config_override,
+            )
+            tracker = PriceTracker(db_manager, headless=headless_mode, factory=factory)
 
             # Fuzzy group matching - unified handling
             resolved_group_name = handle_fuzzy_group_matching(group, db_manager, json_output)
